@@ -8,7 +8,7 @@ Internal (used by panes and key bindings):
     tac core|exec --session S
     tac send --selection|--results --session S
     tac approve|reject|edit --session S
-    tac _ssh
+    tac _ssh | _shell
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import sys
 from tac import __version__
 
 CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark"}
-INTERNAL = {"core", "exec", "stop", "_ssh"} | CLIENT_CMDS
+INTERNAL = {"core", "exec", "stop", "_ssh", "_shell"} | CLIENT_CMDS
 MAX_SELECTION_READ = 2 * 1024 * 1024
 
 
@@ -38,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("approve", "reject", "edit", "mark", "stop"):
         sub.add_parser(name).add_argument("--session")
     sub.add_parser("_ssh")
+    sub.add_parser("_shell")
     return p
 
 
@@ -139,6 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         from tac.launcher import exec_ssh
 
         return exec_ssh()
+    if args.cmd == "_shell":
+        from tac.launcher import exec_shell
+
+        return exec_shell()
     cfg = _load_config(args.socket)
     if args.cmd == "core":
         from tac.core import main as core_main

@@ -25,6 +25,11 @@ from tac import runtime
 from tac.config import Config
 from tac.tmuxctl import MIN_VERSION, Tmux, TmuxError
 
+# Credentials the core needs. tmux copies these from the launching client's
+# environment into the session (update-environment), so a tac server started
+# earlier without them still gets them; the shell pane's shim removes them.
+CREDENTIAL_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_BASE_URL")
+
 # ssh options that take a value (from ssh(1)).
 _SSH_OPTS_WITH_ARG = set("BbcDEeFIiJLlmOoPpQRSWw")
 
@@ -81,6 +86,38 @@ def _shell_cmd(argv: list[str], env: dict[str, str]) -> str:
     return cmd.replace("#", "##")
 
 
+def status_hints(cfg: Config) -> str:
+    k = cfg.keys
+    return (
+        f"click: focus pane │ drag: select │ {k['send_selection']}: send selection │ "
+        f"{k['send_results']}: send output │ {k['approve']} approve  {k['reject']} reject │ "
+        f"{k['focus_toggle']}: shell⇄chat │ q: leave scroll/select "
+    )
+
+
+def configure_server(tmux: Tmux, cfg: Config) -> None:
+    """Look and mouse behaviour. These are global options, which is safe
+    because tac runs its own tmux server; your normal tmux is untouched."""
+    for opt, val in (
+        # Click to focus a pane, drag to select inside one pane, wheel to scroll.
+        ("mouse", "on" if cfg.raw["tmux"]["mouse"] else "off"),
+        # Label panes by role. @tac_role is our own option: a remote program can
+        # change a pane's title with an escape sequence, but not this.
+        ("pane-border-status", "top"),
+        ("pane-border-format", " #{?@tac_role,#{@tac_role},} "),
+        ("pane-active-border-style", "fg=cyan,bold"),
+        ("status-left", " tac #{session_name} "),
+        ("status-left-length", "40"),
+        ("status-right", status_hints(cfg).replace("#", "##")),
+        ("status-right-length", "200"),
+        ("window-status-format", ""),
+        ("window-status-current-format", ""),
+    ):
+        tmux.run("set-option", "-g", opt, val)
+    # tmux's right-click menu offers kill/respawn/swap on any pane; turn it off.
+    tmux.run("unbind-key", "-T", "root", "MouseDown3Pane", check=False)
+
+
 def install_bindings(tmux: Tmux, cfg: Config) -> None:
     """Key bindings live on the dedicated tac tmux server only."""
     base = tac_argv() + ["--socket", cfg.tmux_socket]
@@ -98,13 +135,29 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         (k["edit"], ("edit",)),
     ):
         tmux.run("bind-key", "-T", "root", key, "run-shell", "-b", client(*sub))
-    # pipe-and-cancel (not copy-pipe): the selection goes to tac's stdin only,
-    # never into a tmux paste buffer or the system clipboard.
+    # pipe-and-cancel (not copy-pipe): sending adds nothing to tmux's paste
+    # buffers; the selection goes only to tac's stdin.
     for table in ("copy-mode", "copy-mode-vi"):
         tmux.run(
             "bind-key", "-T", table, k["send_selection"],
             "send-keys", "-X", "pipe-and-cancel", client("send", "--selection"),
         )
+        # Releasing a mouse drag copies as usual but keeps the selection
+        # highlighted (tmux's default clears it), so it can then be sent.
+        tmux.run("bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-no-clear")
+    tmux.run(
+        "bind-key", "-T", "root", k["send_selection"], "display-message",
+        f"Select text first (drag with the mouse), then press {k['send_selection']}",
+    )
+    # Toggle focus between the shell and the chat. select-pane doesn't expand
+    # formats in -t, so go through run-shell, which does.
+    tm = shlex.quote(tmux.binary).replace("#", "##")
+    sock = shlex.quote(cfg.tmux_socket)
+    go = lambda opt: f"run-shell '{tm} -L {sock} select-pane -t #{{{opt}}}'"
+    tmux.run(
+        "bind-key", "-T", "root", k["focus_toggle"], "if-shell", "-F",
+        "#{==:#{pane_id},#{@tac_shell_pane}}", go("@tac_chat_pane"), go("@tac_shell_pane"),
+    )
 
 
 def _check_tmux(tmux: Tmux) -> None:
@@ -126,6 +179,8 @@ def create_session(
         new += env_args + ["-e", "TAC_SSH_ARGV=" + json.dumps(ssh_args)] + tac + ["_ssh"]
     elif shell_argv:
         new += shell_argv  # tests only: fixed argv, never user input
+    else:
+        new += env_args + tac + ["_shell"]
     shell = tmux.run(*new).strip()
 
     chat = tmux.run(
@@ -138,9 +193,12 @@ def create_session(
     ).strip()
 
     tmux.set_option(name, "@tac_session", "1")
+    tmux.set_option(name, "@tac_ssh_args", json.dumps(ssh_args))
     tmux.set_option(name, "@tac_shell_pane", shell)
     tmux.set_option(name, "@tac_chat_pane", chat)
     tmux.set_option(name, "@tac_exec_pane", execp)
+    for pane, role in ((shell, "SHELL"), (chat, "AI CHAT — type here"), (execp, "EXECUTE")):
+        tmux.set_pane_option(pane, "@tac_role", role)
 
     # Keep a dead ssh pane on screen instead of closing it, so a finished
     # session can't silently turn into a different pane receiving pastes.
@@ -172,11 +230,13 @@ def launch(
                      ";", "new-session", "-d", "-s", "_tac_boot")
         else:
             tmux.run("set-option", "-g", "history-limit", str(cfg.history_limit))
+        _pass_credentials(tmux)
         try:
             create_session(tmux, cfg, name, ssh_args, shell_argv)
         finally:
             if tmux.has_session("_tac_boot"):
                 tmux.kill_session("_tac_boot")
+        configure_server(tmux, cfg)
         install_bindings(tmux, cfg)
     if attach:
         env = dict(os.environ)
@@ -184,6 +244,28 @@ def launch(
             print("tac: starting inside tmux; nesting a separate tac tmux server", file=sys.stderr)
         os.execvpe(tmux.binary, tmux.argv("attach-session", "-t", f"={name}"), env)
     return name
+
+
+def _pass_credentials(tmux: Tmux) -> None:
+    current = tmux.run("show-options", "-gv", "update-environment").split()
+    for var in CREDENTIAL_VARS:
+        if var not in current:
+            tmux.run("set-option", "-ga", "update-environment", var)
+
+
+def _scrub_env() -> None:
+    """The shell pane must not inherit tac's plumbing or the API credentials:
+    anything in its environment can end up in captured output."""
+    for var in (*CREDENTIAL_VARS, "PYTHONPATH", "TAC_SSH_ARGV"):
+        os.environ.pop(var, None)
+
+
+def exec_shell() -> int:
+    """`tac _shell`: the shell pane's process for a local session. Runs your
+    login shell, as tmux would, minus the scrubbed variables."""
+    _scrub_env()
+    shell = os.environ.get("SHELL") or "/bin/sh"
+    os.execv(shell, ["-" + os.path.basename(shell)])
 
 
 def exec_ssh() -> int:
@@ -196,5 +278,5 @@ def exec_ssh() -> int:
     if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
         print("tac _ssh: TAC_SSH_ARGV must be a JSON list of strings", file=sys.stderr)
         return 2
-    os.environ.pop("PYTHONPATH", None)
+    _scrub_env()
     os.execvp("ssh", ["ssh", *args])

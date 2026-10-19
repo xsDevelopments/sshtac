@@ -106,6 +106,22 @@ class Tmux:
             args += ["-t", target]
         self.run(*args, msg.replace("#", "##"), check=False)
 
+    def pane_in_mode(self, pane: str) -> bool:
+        return self.display(pane, "#{pane_in_mode}") == "1"
+
+    def paste(self, pane: str, text: str, buffer: str) -> None:
+        """Bracketed paste of `text` into `pane`, never via a file: the text goes
+        in on stdin, and the buffer is deleted as part of the paste (-d)."""
+        self.run("load-buffer", "-b", buffer, "-", input=text.encode())
+        try:
+            self.run("paste-buffer", "-p", "-d", "-b", buffer, "-t", pane)
+        except TmuxError:
+            self.run("delete-buffer", "-b", buffer, check=False)
+            raise
+
+    def send_enter(self, pane: str) -> None:
+        self.run("send-keys", "-t", pane, "Enter")
+
     def select_pane(self, pane: str) -> None:
         self.run("select-pane", "-t", pane)
 

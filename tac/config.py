@@ -17,11 +17,22 @@ from tac.pipeline import EntropySettings, Pipeline, compile_patterns
 
 DEFAULTS: dict[str, Any] = {
     "model": "claude-sonnet-5-5",
+    "ai": {
+        "effort": "medium",  # low | medium | high | xhigh | max
+        "max_tokens": 16_000,
+        "timeout": 120.0,  # seconds per API request (the SDK retries twice)
+        # Server-side refusal fallback ("default" or "off"): a declined
+        # request is re-run on Anthropic's recommended fallback model.
+        "fallbacks": "default",
+        # Trim the oldest terminal output once a request reaches this size.
+        "trim_at_tokens": 400_000,
+    },
     "tmux": {
         # tac runs its own tmux server (`tmux -L tac`) so its key bindings and
         # options never touch your normal tmux sessions.
         "socket_name": "tac",
         "history_limit": 50_000,
+        "mouse": True,  # click to focus, drag to select within a pane, wheel to scroll
         "right_width": "45%",
         "exec_height": "35%",
     },
@@ -32,6 +43,7 @@ DEFAULTS: dict[str, Any] = {
         "approve": "F7",
         "reject": "F8",
         "edit": "F9",
+        "focus_toggle": "F4",  # jump between the shell and the chat
     },
     "redaction": {
         "disable": [],  # names of default patterns to turn off
@@ -88,6 +100,10 @@ class Config:
     keys: dict[str, str]
     raw: dict[str, Any]
 
+    @property
+    def ai(self) -> dict[str, Any]:
+        return self.raw["ai"]
+
     def pipeline(self) -> Pipeline:
         r = self.raw["redaction"]
         e = r["entropy"]
@@ -129,6 +145,11 @@ def from_dict(data: dict[str, Any]) -> Config:
     for name in ("right_width", "exec_height"):
         if not re.fullmatch(r"\d{1,3}%|\d{1,4}", t[name]):
             raise ConfigError(f"tmux.{name} must be like '45%' or a cell count")
+    ai = data["ai"]
+    if ai["effort"] not in ("low", "medium", "high", "xhigh", "max"):
+        raise ConfigError("ai.effort must be low, medium, high, xhigh or max")
+    if ai["fallbacks"] not in ("default", "off"):
+        raise ConfigError('ai.fallbacks must be "default" or "off"')
     if data["capture"]["max_chars"] < 500:
         raise ConfigError("capture.max_chars must be at least 500")
     cfg = Config(

@@ -1,13 +1,15 @@
-"""End-to-end phase 1 check against a real tmux server on a private socket.
+"""End-to-end check against a real tmux server on a private socket.
 
 Skipped when tmux isn't installed. The shell pane runs a bare
 `bash --norc --noprofile` so the test never touches your shell's startup files.
+The core uses the scripted fake model (tac.testing): no API calls are made.
 """
 
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -43,13 +45,18 @@ def wait_for(pred, timeout=5.0):
 
 
 @unittest.skipUnless(shutil.which("tmux") and shutil.which("bash"), "needs tmux and bash")
-class TestPhase1EndToEnd(unittest.TestCase):
+class TestEndToEnd(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Registered first so a failing setUpClass still cleans up
         # (tearDownClass is skipped in that case).
         cls.addClassCleanup(cls._cleanup)
+        # The tmux server, and so every pane, inherits these from this process.
+        cls.state = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.state.cleanup)
         os.environ["TAC_TMUX_SOCKET"] = SOCKET
+        os.environ["TAC_TEST_FAKE_MODEL"] = "1"
+        os.environ["XDG_STATE_HOME"] = cls.state.name
         cls.cfg = config.load(Path("/nonexistent"))
         clean_shell = ["env", "-i", "PATH=/usr/bin:/bin", "TERM=tmux-256color", "PS1=t$ ",
                        "bash", "--norc", "--noprofile"]
@@ -62,7 +69,8 @@ class TestPhase1EndToEnd(unittest.TestCase):
 
     @classmethod
     def _cleanup(cls):
-        os.environ.pop("TAC_TMUX_SOCKET", None)
+        for var in ("TAC_TMUX_SOCKET", "TAC_TEST_FAKE_MODEL", "XDG_STATE_HOME"):
+            os.environ.pop(var, None)
         subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
         # tmux leaves its socket file behind when the server exits. The server
         # may already be gone (test_9 stops the last session), so derive the
@@ -78,6 +86,23 @@ class TestPhase1EndToEnd(unittest.TestCase):
     def chat_text(cls) -> str:
         return tmux("capture-pane", "-p", "-J", "-S", "-", "-t", cls.chat)
 
+    def pane(self, pane: str) -> str:
+        return tmux("capture-pane", "-p", "-J", "-S", "-", "-t", pane)
+
+    def audit_events(self) -> list[dict]:
+        import json
+
+        logs = list(Path(self.state.name, "tac").glob(f"audit-{SESSION}-*.jsonl"))
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(os.stat(logs[0]).st_mode & 0o777, 0o600)
+        return [json.loads(line) for line in logs[0].read_text().splitlines()]
+
+    def propose(self, command: str, risk: str = "read_only") -> None:
+        r = tac("send", "--selection", "--session", SESSION,
+                stdin=f"FAKE_RISK {risk}\nFAKE_PROPOSE {command}")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(wait_for(lambda: command in self.pane(self.exec_)), self.pane(self.exec_))
+
     def test_1_layout_and_options(self):
         panes = tmux("list-panes", "-t", f"={SESSION}:", "-F", "#{pane_id}").split()
         self.assertEqual(sorted(panes), sorted([self.shell, self.chat, self.exec_]))
@@ -85,6 +110,17 @@ class TestPhase1EndToEnd(unittest.TestCase):
         keys = tmux("list-keys", "-T", "root")
         self.assertIn("F6", keys)
         self.assertIn("#{q:session_name}", keys)
+        self.assertIn("fake model", self.chat_text())
+
+    def test_1b_mouse_and_labels(self):
+        self.assertEqual(tmux("show-options", "-gv", "mouse").strip(), "on")
+        self.assertIn("copy-pipe-no-clear", tmux("list-keys", "-T", "copy-mode", "MouseDragEnd1Pane"))
+        self.assertIn("@tac_chat_pane", tmux("list-keys", "-T", "root", "F4"))
+        roles = {p: tmux("display-message", "-p", "-t", p, "#{@tac_role}").strip()
+                 for p in (self.shell, self.chat, self.exec_)}
+        self.assertEqual(roles[self.shell], "SHELL")
+        self.assertTrue(roles[self.chat].startswith("AI CHAT"))
+        self.assertEqual(roles[self.exec_], "EXECUTE")
 
     def test_2_results_buffer_redacted_and_mark_advances(self):
         self.assertEqual(tac("mark", "--session", SESSION).returncode, 0)
@@ -104,28 +140,68 @@ class TestPhase1EndToEnd(unittest.TestCase):
         time.sleep(0.4)
         tac("send", "--results", "--session", SESSION)
         self.assertTrue(wait_for(lambda: self.chat_text().count("SECOND") >= 2))
-        last_block = self.chat_text().rsplit('<terminal_output source="results_buffer">', 1)[1]
-        self.assertNotIn("FIRST", last_block)
+        last_reply = self.chat_text().rsplit("FAKE MODEL received:", 1)[1]
+        self.assertNotIn("FIRST", last_reply)
 
     def test_3_selection(self):
         r = tac("send", "--selection", "--session", SESSION, stdin="sel \x1b[31mAKIAIOSFODNN7EXAMPLE\x1b[0m")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(wait_for(lambda: "sel [REDACTED:aws_access_key]" in self.chat_text()))
 
-    def test_4_approve_reaches_executor(self):
+    def test_4_approve_with_nothing_pending(self):
         self.assertEqual(tac("approve", "--session", SESSION).returncode, 0)
-        self.assertTrue(wait_for(
-            lambda: "[approve] no pending command" in tmux("capture-pane", "-p", "-t", self.exec_)
-        ))
+        self.assertTrue(wait_for(lambda: "nothing to approve" in self.pane(self.exec_)))
 
     def test_5_unknown_session_fails_cleanly(self):
         r = tac("send", "--results", "--session", "tac-nope")
         self.assertEqual(r.returncode, 1)
         self.assertIn("not reachable", r.stderr)
 
-    def test_9_stop_removes_socket(self):
+    def test_6_propose_approve_runs_and_reports(self):
+        self.propose("echo ran-$((6*7))")
+        self.assertEqual(tac("approve", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: "ran-42" in self.pane(self.shell)), self.pane(self.shell))
+        self.assertTrue(wait_for(lambda: "[approved] echo ran-$((6*7))" in self.chat_text()))
+        self.assertTrue(wait_for(lambda: "No pending command" in self.pane(self.exec_)))
+        # The next send carries the outcome back to the model and the output
+        # captured from the mark set on the command line.
+        time.sleep(0.3)
+        tac("send", "--results", "--session", SESSION)
+        self.assertTrue(wait_for(lambda: "it was pasted into the shell and run" in self.chat_text()))
+        last_reply = self.chat_text().rsplit("FAKE MODEL received:", 1)[1]
+        self.assertIn("echo ran-$((6*7))", last_reply)
+        self.assertIn("ran-42", last_reply)
+        self.assertNotIn("SECOND", last_reply)
+
+    def test_7_reject_never_pastes(self):
+        self.propose("echo should-not-run")
+        self.assertEqual(tac("reject", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: "[rejected] echo should-not-run" in self.chat_text()))
+        self.assertNotIn("should-not-run", self.pane(self.shell))
+
+    def test_8_destructive_cannot_be_approved_yet(self):
+        self.propose("rm -f /tmp/tac-test-nonexistent", risk="destructive")
+        self.assertEqual(tac("approve", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: "cannot approve: destructive" in self.pane(self.exec_)))
+        self.assertNotIn("tac-test-nonexistent", self.pane(self.shell))
+        tac("reject", "--session", SESSION)
+        self.assertTrue(wait_for(lambda: "[rejected] rm -f" in self.chat_text()))
+
+    def test_9_stop_removes_socket_and_audit_is_a_timeline(self):
         self.assertEqual(tac("stop", "--session", SESSION).returncode, 0)
         self.assertTrue(wait_for(lambda: not self.sock.exists()))
+        self.assertTrue(wait_for(lambda: self.audit_events()[-1]["event"] == "session_end"))
+        events = self.audit_events()
+        kinds = [e["event"] for e in events]
+        self.assertEqual(kinds[0], "session_start")
+        for k in ("send", "model_reply", "approved", "rejected", "fake_model"):
+            self.assertIn(k, kinds)
+        approved = next(e for e in events if e["event"] == "approved")
+        self.assertEqual(approved["command"], "echo ran-$((6*7))")
+        self.assertEqual([e["seq"] for e in events], list(range(1, len(events) + 1)))
+        raw = Path(next(Path(self.state.name, "tac").glob("*.jsonl"))).read_text()
+        self.assertNotIn("hunter2", raw)
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", raw)
 
 
 if __name__ == "__main__":

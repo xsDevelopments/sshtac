@@ -53,6 +53,8 @@ class Connection:
         self.wfile = wfile
         self._lock = threading.Lock()
         self.role = "client"
+        # Run once the reply to the current request has been written.
+        self.after_reply: list[Callable[[], None]] = []
 
     def send(self, msg: dict[str, Any]) -> None:
         with self._lock:
@@ -87,6 +89,9 @@ class _RequestHandler(socketserver.StreamRequestHandler):
                 reply = self.server.dispatch(msg, conn)
                 if reply is not None:
                     conn.send(reply)
+                callbacks, conn.after_reply = conn.after_reply, []
+                for cb in callbacks:
+                    cb()
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
@@ -175,6 +180,7 @@ class Subscription:
         reply = self._read()
         if reply is None or not reply.get("ok"):
             raise IPCError(f"core refused subscription: {reply}")
+        self.hello_reply = reply
         self.sock.settimeout(None)
 
     def _read(self) -> dict[str, Any] | None:
