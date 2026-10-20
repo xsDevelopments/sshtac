@@ -20,7 +20,7 @@ import sys
 import threading
 from typing import Any
 
-from tac import ipc, llm, runtime
+from tac import ipc, llm, policy, runtime
 from tac.audit import AuditLog
 from tac.config import Config
 from tac.marks import Mark, capture_range, mark_at
@@ -30,12 +30,15 @@ from tac.ui import ChatUI
 
 MAX_SELECTION = 2 * 1024 * 1024
 MAX_CHAT = 20_000
+MAX_SECRETS = 64
+LOG_KINDS = ("block", "edit")
 
 HELP = """\
 Type a question here and press Enter. Commands: /help /status /mark /sent
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
-End the session with `tac stop` from any shell (or kill the tmux session)."""
+Leave: /detach (or Ctrl+B then d) keeps everything running — run tac again to come back.
+       /quit ends tac completely, including the shell and any SSH connection."""
 
 OUTCOMES = ("approved", "rejected", "superseded")
 
@@ -53,6 +56,9 @@ class Core:
         self.executor: ipc.Connection | None = None
         self.executor_token = ""
         self.proposal: llm.Proposal | None = None
+        self.proposals: dict[str, llm.Proposal] = {}  # every proposal this session, by id
+        pol = cfg.raw["policy"]
+        self.classifier = policy.Classifier(pol["blocked_patterns"], pol["destructive_patterns"])
         self._lock = threading.RLock()
         self._work: queue.Queue[dict[str, Any] | None] = queue.Queue()
         self.server: ipc.Server | None = None
@@ -125,6 +131,7 @@ class Core:
             fallbacks=ai["fallbacks"] == "default",
             trim_at_tokens=ai["trim_at_tokens"],
             session_context=f"The shell pane is running {target}.",
+            reasoning_summary=ai["show_reasoning"] != "never",
         )
 
     def _set_initial_mark(self) -> None:
@@ -167,10 +174,29 @@ class Core:
             self.ui.say(self.last_sent or "(nothing sent yet)")
         elif line == "/mark":
             self._work.put({"cmd": "mark"})
+        elif line == "/detach":
+            self.tmux.run("detach-client", "-s", f"={self.session}", check=False)
+        elif line in ("/quit", "/exit"):
+            self._quit()
         elif line.startswith("/"):
             self.ui.say(f"unknown command {line.split()[0]}; try /help", "yellow")
         else:
             self._work.put({"cmd": "chat", "text": line[:MAX_CHAT]})
+
+    def _quit(self) -> None:
+        try:
+            ans = self.ui.read_line("End tac now? This closes the shell and any SSH connection. [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            ans = ""
+        if ans.strip().lower() not in ("y", "yes"):
+            self.ui.say("not quitting (use /detach to leave it running)", "dim", trusted=True)
+            return
+        self.ui.say("ending the session…", "yellow", trusted=True)
+        if self.audit:
+            self.audit.event("quit")
+        # Killing the session sends us SIGHUP; main()'s handler turns that into
+        # a normal exit, so the socket is removed and the audit log closed.
+        self.tmux.kill_session(self.session)
 
     # ---------------------------------------------------------------- IPC
 
@@ -217,13 +243,17 @@ class Core:
             except (TmuxError, RuntimeError) as e:
                 return {"ok": False, "error": str(e)}
             return {"ok": True}
-        if cmd == "outcome":
+        if cmd in ("outcome", "add_secrets", "log"):
             with self._lock:
                 expected = self.executor_token
             token = msg.get("token")
             if not expected or not isinstance(token, str) or not hmac.compare_digest(token, expected):
-                return {"ok": False, "error": "outcome must come from the connected execute pane"}
-            return self._handle_outcome(msg)
+                return {"ok": False, "error": f"{cmd} must come from the connected execute pane"}
+            if cmd == "outcome":
+                return self._handle_outcome(msg)
+            if cmd == "add_secrets":
+                return self._add_secrets(msg)
+            return self._handle_log(msg)
         if cmd in ("approve", "reject", "edit"):
             return self._forward_to_executor(cmd)
         return {"ok": False, "error": f"unknown command {cmd!r}"}
@@ -251,21 +281,80 @@ class Core:
             return {"ok": False, "error": "execute pane is not connected"}
         return {"ok": True}
 
+    def _redact(self, text: str) -> str:
+        """Regex + session-secret redaction for anything we log or send that
+        the human may have typed (edited commands)."""
+        with self._lock:
+            secrets_ = set(self.session_secrets)
+        text, _ = redact_session_secrets(strip(text), secrets_)
+        text, _ = redact(text, self.pipeline.patterns, self.pipeline.entropy)
+        return text
+
     def _handle_outcome(self, msg: dict[str, Any]) -> dict[str, Any]:
         pid, outcome = msg.get("id"), msg.get("outcome")
         if outcome not in OUTCOMES or not isinstance(pid, str):
             return {"ok": False, "error": "bad outcome"}
         with self._lock:
-            current = self.proposal
-            if current is None or current.id != pid:
-                return {"ok": False, "error": "no such pending proposal"}
-            self.proposal = None
-            if self.conversation:
-                self.conversation.record_outcome(pid, outcome)
+            prop = self.proposals.get(pid)
+            if prop is None:
+                return {"ok": False, "error": "unknown proposal"}
+            if self.proposal is not None and self.proposal.id == pid:
+                self.proposal = None
+        command = msg.get("command") if isinstance(msg.get("command"), str) else prop.command
+        edited = bool(msg.get("edited"))
+        shown = self._redact(command)
+        detail = f"The human edited it first; what ran was: {shown}" if edited and outcome == "approved" else ""
+        if edited and outcome == "rejected":
+            detail = "(after editing it)"
+        if self.conversation:
+            self.conversation.record_outcome(pid, outcome, detail)
+        names = [n for n in msg.get("placeholders", []) if isinstance(n, str)]
         assert self.audit
-        self.audit.event(outcome, proposal_id=pid, command=current.command)
+        self.audit.event(
+            outcome,
+            proposal_id=pid,
+            command=shown,
+            edited=edited,
+            placeholders=names,  # names only, never values
+            prefixed_space=bool(msg.get("prefixed_space")),
+            local_risk=msg.get("local_risk"),
+            effective_risk=msg.get("effective"),
+        )
         colour = {"approved": "green", "rejected": "yellow"}.get(outcome, "dim")
-        self.ui.say(f"[{outcome}] {current.command}", colour)
+        self.ui.say(f"[{outcome}{' after edit' if edited else ''}] {shown}", colour)
+        return {"ok": True}
+
+    def _add_secrets(self, msg: dict[str, Any]) -> dict[str, Any]:
+        values = msg.get("values")
+        if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values) or len(values) > MAX_SECRETS:
+            return {"ok": False, "error": "bad secrets"}
+        with self._lock:
+            self.session_secrets.update(values)
+        return {"ok": True}
+
+    def _handle_log(self, msg: dict[str, Any]) -> dict[str, Any]:
+        kind = msg.get("kind")
+        if kind not in LOG_KINDS:
+            return {"ok": False, "error": "bad log kind"}
+        pid = msg.get("proposal_id")
+        fields: dict[str, Any] = {
+            "proposal_id": pid,
+            "local_risk": msg.get("local_risk"),
+            "effective_risk": msg.get("effective"),
+            "reasons": [r for r in msg.get("reasons", []) if isinstance(r, str)][:10],
+        }
+        if kind == "edit":
+            before, after = msg.get("before"), msg.get("after")
+            if not isinstance(before, str) or not isinstance(after, str):
+                return {"ok": False, "error": "bad edit"}
+            fields["before"], fields["after"] = self._redact(before), self._redact(after)
+            self.ui.say(f"[edited] {fields['after']}  (local: {fields['local_risk']})", "cyan")
+        else:
+            command = msg.get("command")
+            fields["command"] = self._redact(command) if isinstance(command, str) else None
+            self.ui.say(f"[blocked] approval refused: {'; '.join(fields['reasons'][:1])}", "red")
+        assert self.audit
+        self.audit.event(kind, **fields)
         return {"ok": True}
 
     # ---------------------------------------------------------------- work
@@ -380,6 +469,7 @@ class Core:
             text=reply.text,
             proposal=reply.proposal.to_dict() if reply.proposal else None,
             proposal_error=reply.proposal_error,
+            reasoning=reply.reasoning,
             stop_reason=reply.stop_reason,
             served_by=reply.served_by,
             usage=reply.usage,
@@ -387,7 +477,17 @@ class Core:
         if reply.served_by:
             self.ui.say(f"(answered by fallback model {reply.served_by})", "dim")
         self.ui.say("claude>", "magenta", trusted=True)
-        self.ui.say(reply.text or "(no text)")
+        mode = self.cfg.ai["show_reasoning"]
+        if reply.reasoning and (mode == "always" or (mode == "auto" and not reply.text)):
+            self.ui.say("(reasoning summary)", "dim", trusted=True)
+            self.ui.say(reply.reasoning, "dim")
+        if reply.text:
+            self.ui.say(reply.text)
+        elif not reply.reasoning:
+            if reply.proposal:
+                self.ui.say(f"(no explanation given; the model's stated purpose: {reply.proposal.purpose})", "yellow")
+            else:
+                self.ui.say("(the model returned no text)", "yellow")
         if reply.proposal_error:
             self.ui.say(f"invalid command proposal ignored: {reply.proposal_error}", "yellow")
         if reply.proposal:
@@ -397,16 +497,30 @@ class Core:
         with self._lock:
             old = self.proposal
             self.proposal = proposal
+            self.proposals[proposal.id] = proposal
             if old and self.conversation:
                 self.conversation.record_outcome(old.id, "superseded")
         assert self.audit
         if old:
             self.audit.event("superseded", proposal_id=old.id, command=old.command)
+        verdict = self.classifier.classify(proposal.command)
+        eff = policy.effective(proposal.risk, verdict.risk)
+        self.audit.event(
+            "classification",
+            proposal_id=proposal.id,
+            local_risk=verdict.risk.label,
+            model_risk=proposal.risk,
+            effective_risk=eff.label,
+            reasons=verdict.reasons,
+            injection_suspected=proposal.injection_suspected,
+        )
         if self._push({"event": "proposal", "proposal": proposal.to_dict()}):
             k = self.cfg.keys
+            colour = {policy.Risk.BLOCKED: "red", policy.Risk.DESTRUCTIVE: "red"}.get(eff, "cyan")
             self.ui.say(
-                f"→ command proposed in the execute pane: {k['approve']} approve, {k['reject']} reject",
-                "cyan",
+                f"→ command proposed ({eff.label}) in the execute pane: "
+                f"{k['approve']} approve, {k['reject']} reject, {k['edit']} edit",
+                colour,
                 trusted=True,
             )
         else:

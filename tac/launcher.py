@@ -87,11 +87,13 @@ def _shell_cmd(argv: list[str], env: dict[str, str]) -> str:
 
 
 def status_hints(cfg: Config) -> str:
+    # tmux trims a too-long status-right from the left, so the most important
+    # hint (how to get out) goes last.
     k = cfg.keys
     return (
-        f"click: focus pane │ drag: select │ {k['send_selection']}: send selection │ "
-        f"{k['send_results']}: send output │ {k['approve']} approve  {k['reject']} reject │ "
-        f"{k['focus_toggle']}: shell⇄chat │ q: leave scroll/select "
+        f"drag+{k['send_selection']} send selection │ {k['send_results']} send output │ "
+        f"{k['approve']} approve {k['reject']} reject {k['edit']} edit │ {k['focus_toggle']} shell⇄chat │ "
+        f"q leave scroll │ exit: /quit in chat · detach: Ctrl+B d "
     )
 
 
@@ -197,23 +199,44 @@ def create_session(
     tmux.set_option(name, "@tac_shell_pane", shell)
     tmux.set_option(name, "@tac_chat_pane", chat)
     tmux.set_option(name, "@tac_exec_pane", execp)
-    for pane, role in ((shell, "SHELL"), (chat, "AI CHAT — type here"), (execp, "EXECUTE")):
-        tmux.set_pane_option(pane, "@tac_role", role)
-
-    # Keep a dead ssh pane on screen instead of closing it, so a finished
-    # session can't silently turn into a different pane receiving pastes.
-    tmux.set_pane_option(shell, "remain-on-exit", "on")
-    tmux.set_pane_option(
-        shell,
-        "remain-on-exit-format",
-        "[tac] shell exited (#{pane_dead_status}). Reconnect: prefix + : respawn-pane   End: tac stop",
-        check=False,
-    )
+    decorate_session(tmux, name)
     tmux.select_pane(shell)
 
 
+def decorate_session(tmux: Tmux, name: str) -> list[str]:
+    """Per-pane settings, safe to re-apply on every launch. Returns problems
+    found (e.g. a pane that no longer exists) instead of raising."""
+    problems = []
+    panes = {role: tmux.get_option(name, f"@tac_{role}_pane") for role in ("shell", "chat", "exec")}
+    labels = {"shell": "SHELL", "chat": "AI CHAT — type here", "exec": "EXECUTE"}
+    for role, pane in panes.items():
+        if not pane:
+            problems.append(f"@tac_{role}_pane is not set")
+            continue
+        try:
+            tmux.set_pane_option(pane, "@tac_role", labels[role])
+        except TmuxError as e:
+            problems.append(f"{role} pane {pane}: {e}")
+    shell = panes["shell"]
+    if shell:
+        # Keep a dead ssh pane on screen instead of closing it, so a finished
+        # session can't silently turn into a different pane receiving pastes.
+        tmux.set_pane_option(shell, "remain-on-exit", "on", check=False)
+        tmux.set_pane_option(
+            shell,
+            "remain-on-exit-format",
+            "[tac] shell exited (#{pane_dead_status}). Reconnect: prefix + : respawn-pane   End: tac stop",
+            check=False,
+        )
+    return problems
+
+
 def launch(
-    ssh_args: list[str], cfg: Config, attach: bool = True, shell_argv: list[str] | None = None
+    ssh_args: list[str],
+    cfg: Config,
+    attach: bool = True,
+    shell_argv: list[str] | None = None,
+    prompt_for_key: bool = False,
 ) -> str:
     tmux = Tmux(cfg.tmux_socket)
     _check_tmux(tmux)
@@ -221,7 +244,15 @@ def launch(
     name = session_name(ssh_args)
     if tmux.has_session(name):
         print(f"tac: attaching to existing session {name}", file=sys.stderr)
+        problems = decorate_session(tmux, name)
+        if problems:
+            raise TmuxError(
+                f"session {name} looks broken ({'; '.join(problems)}). "
+                f"End it with `tac stop --session {name}` and start again."
+            )
     else:
+        if prompt_for_key:
+            ask_for_key()
         # Start the server with our history-limit as the global default so the
         # shell pane gets it too. A server needs a session to stay alive, so the
         # option is set in the same command list as the session creation.
@@ -233,17 +264,52 @@ def launch(
         _pass_credentials(tmux)
         try:
             create_session(tmux, cfg, name, ssh_args, shell_argv)
+        except BaseException:
+            # Don't leave a half-built session behind for the next launch to
+            # attach to, whatever stopped us (an error, Ctrl+C, ...).
+            if tmux.has_session(name):
+                tmux.kill_session(name)
+            raise
         finally:
             if tmux.has_session("_tac_boot"):
                 tmux.kill_session("_tac_boot")
-        configure_server(tmux, cfg)
-        install_bindings(tmux, cfg)
+    # Server-wide look and key bindings: re-applied on every launch, so a
+    # server whose setup was interrupted is repaired by running tac again.
+    configure_server(tmux, cfg)
+    install_bindings(tmux, cfg)
     if attach:
         env = dict(os.environ)
         if env.pop("TMUX", None):
             print("tac: starting inside tmux; nesting a separate tac tmux server", file=sys.stderr)
         os.execvpe(tmux.binary, tmux.argv("attach-session", "-t", f"={name}"), env)
     return name
+
+
+def has_credentials(env: dict[str, str] | None = None) -> bool:
+    env = os.environ if env is None else env
+    if any(env.get(v) for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE")):
+        return True
+    return (Path.home() / ".config" / "anthropic").is_dir()  # `ant auth login` profile
+
+
+def ask_for_key(getpass_fn=None) -> None:
+    """If no credentials are set, ask for an API key with a hidden prompt. It
+    goes into this process's environment only; tmux copies it to the new
+    session (update-environment) and the shell pane's shim removes it again.
+    Nothing is written to disk or put on a command line."""
+    if os.environ.get("TAC_TEST_FAKE_MODEL") == "1" or has_credentials() or not sys.stdin.isatty():
+        return
+    import getpass
+
+    getpass_fn = getpass_fn or getpass.getpass
+    print("tac: no Anthropic API key found in this terminal.", file=sys.stderr)
+    key = getpass_fn("Paste your API key (hidden), or press Enter to run without AI: ").strip()
+    if not key:
+        print("tac: starting without AI (chat will say it is disabled)", file=sys.stderr)
+        return
+    if not key.startswith("sk-ant-"):
+        print("tac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
+    os.environ["ANTHROPIC_API_KEY"] = key
 
 
 def _pass_credentials(tmux: Tmux) -> None:

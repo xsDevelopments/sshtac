@@ -26,6 +26,9 @@ DEFAULTS: dict[str, Any] = {
         "fallbacks": "default",
         # Trim the oldest terminal output once a request reaches this size.
         "trim_at_tokens": 400_000,
+        # The model's reasoning summary in the chat pane: "auto" shows it when
+        # the reply has no visible text, "always", or "never" (not requested).
+        "show_reasoning": "auto",
     },
     "tmux": {
         # tac runs its own tmux server (`tmux -L tac`) so its key bindings and
@@ -44,6 +47,11 @@ DEFAULTS: dict[str, Any] = {
         "reject": "F8",
         "edit": "F9",
         "focus_toggle": "F4",  # jump between the shell and the chat
+    },
+    "policy": {
+        # Extra regexes (case-insensitive) over the command's token skeleton.
+        "blocked_patterns": [],  # can never be approved
+        "destructive_patterns": [],  # need a typed "yes"
     },
     "redaction": {
         "disable": [],  # names of default patterns to turn off
@@ -148,6 +156,8 @@ def from_dict(data: dict[str, Any]) -> Config:
     ai = data["ai"]
     if ai["effort"] not in ("low", "medium", "high", "xhigh", "max"):
         raise ConfigError("ai.effort must be low, medium, high, xhigh or max")
+    if ai["show_reasoning"] not in ("auto", "always", "never"):
+        raise ConfigError('ai.show_reasoning must be "auto", "always" or "never"')
     if ai["fallbacks"] not in ("default", "off"):
         raise ConfigError('ai.fallbacks must be "default" or "off"')
     if data["capture"]["max_chars"] < 500:
@@ -162,6 +172,12 @@ def from_dict(data: dict[str, Any]) -> Config:
         keys=dict(data["keys"]),
         raw=data,
     )
+    for key in ("blocked_patterns", "destructive_patterns"):
+        for rx in data["policy"][key]:
+            try:
+                re.compile(rx)
+            except (re.error, TypeError) as e:
+                raise ConfigError(f"policy.{key}: bad regex {rx!r}: {e}") from None
     try:
         cfg.pipeline()  # validate user regexes now rather than on first send
     except (ValueError, KeyError, re.error) as e:

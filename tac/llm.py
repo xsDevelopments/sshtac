@@ -61,6 +61,9 @@ deletes, kills, overwrites, stops services, or changes firewall, users or \
 passwords. The human's tool also classifies commands itself and uses the \
 stricter label.
 - Keep commands to a single line. Do not chain unrelated steps.
+- Always write your explanation as visible text in your reply, including when \
+you propose a command: the human reads only that text, not your reasoning. Say \
+what you saw, what you conclude, and what the command will show or change.
 
 ## Secrets
 Never ask for passwords, keys or tokens in chat, and never repeat a secret you \
@@ -206,6 +209,7 @@ class Reply:
     refusal_category: str | None = None
     stop_reason: str | None = None
     served_by: str | None = None  # set when a fallback model answered
+    reasoning: str = ""  # summarized thinking, when requested and returned
     usage: dict[str, Any] = field(default_factory=dict)
     trimmed: bool = False
 
@@ -249,6 +253,7 @@ class Conversation:
         fallbacks: bool = True,
         trim_at_tokens: int = 400_000,
         session_context: str = "",
+        reasoning_summary: bool = True,
     ):
         self.client = client
         self.model = model
@@ -257,6 +262,7 @@ class Conversation:
         self.fallbacks = fallbacks
         self.trim_at_tokens = trim_at_tokens
         self.session_context = session_context
+        self.reasoning_summary = reasoning_summary
         self.messages: list[dict[str, Any]] = []
         self.tool_uses: dict[str, _ToolUse] = {}
         self.notes: list[str] = []
@@ -311,6 +317,10 @@ class Conversation:
             output_config={"effort": self.effort},
             cache_control={"type": "ephemeral"},
         )
+        if self.reasoning_summary:
+            # A request parameter, not part of system/tools/messages: changing
+            # it never invalidates earlier thinking blocks.
+            kwargs["thinking"] = {"type": "adaptive", "display": "summarized"}
         if self.fallbacks:
             return self.client.beta.messages.create(
                 betas=[FALLBACK_BETA], fallbacks="default", **kwargs
@@ -384,6 +394,9 @@ class Conversation:
 
         reply = Reply(
             text="\n\n".join(b["text"] for b in content if b.get("type") == "text" and b.get("text")),
+            reasoning="\n\n".join(
+                b["thinking"] for b in content if b.get("type") == "thinking" and b.get("thinking")
+            ),
             stop_reason=resp.stop_reason,
             served_by=served_by,
             usage=usage,

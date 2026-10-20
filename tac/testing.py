@@ -6,6 +6,8 @@ Enabled in the core with TAC_TEST_FAKE_MODEL=1. It makes no network calls:
   notes and text), so tests can see exactly what would have gone to the API;
 * if the turn contains a line `FAKE_PROPOSE <command>`, it proposes <command>
   (the last such line wins) with risk taken from `FAKE_RISK <risk>` if present;
+* placeholders in the command are declared, unless `FAKE_UNDECLARED` is present;
+* `FAKE_SILENT` replies with no text, only a reasoning summary;
 * `FAKE_REFUSE` makes it refuse; `FAKE_ERROR` makes it raise.
 """
 
@@ -51,10 +53,12 @@ class _Messages:
                 content=[], stop_reason="refusal", usage=usage, model=kwargs["model"],
                 stop_details=SimpleNamespace(category="cyber", explanation=None),
             )
+        thinking = "FAKE REASONING: the file is not a device" if "FAKE_SILENT" in text else ""
         content: list[dict[str, Any]] = [
-            {"type": "thinking", "thinking": "", "signature": f"sig{next(_ids)}"},
-            {"type": "text", "text": "FAKE MODEL received:\n" + text},
+            {"type": "thinking", "thinking": thinking, "signature": f"sig{next(_ids)}"},
         ]
+        if "FAKE_SILENT" not in text:
+            content.append({"type": "text", "text": "FAKE MODEL received:\n" + text})
         proposals = re.findall(r"^.*?FAKE_PROPOSE (.+)$", text, re.MULTILINE)
         if proposals:
             risk = (re.findall(r"FAKE_RISK (\w+)", text) or ["read_only"])[-1]
@@ -68,7 +72,10 @@ class _Messages:
                     "expected_effect": "whatever the command does",
                     "risk": risk,
                     "reversible": True,
-                    "placeholders": [],
+                    "placeholders": [] if "FAKE_UNDECLARED" in text else [
+                        {"name": n, "description": "scripted secret"}
+                        for n in dict.fromkeys(re.findall(r"\{\{([A-Z][A-Z0-9_]*)\}\}", proposals[-1]))
+                    ],
                     "injection_suspected": False,
                 },
             })

@@ -8,9 +8,7 @@ from pathlib import Path
 from tac import charsafe
 from tac.audit import AuditLog
 from tac.executor import assess
-
-BASE = {"id": "toolu_x", "command": "uptime", "risk": "read_only", "placeholders": []}
-
+from tac.policy import Classifier, Risk
 
 class TestCharSafety(unittest.TestCase):
     def test_plain_ok(self):
@@ -49,14 +47,24 @@ class TestCharSafety(unittest.TestCase):
 
 
 class TestAssess(unittest.TestCase):
-    def test_plain_read_only_approvable(self):
-        self.assertEqual(assess(BASE), [])
+    C = Classifier()
 
-    def test_reasons(self):
-        self.assertIn("BLOCKED", assess(dict(BASE, command="ls\x1b[2J"))[0])
-        self.assertIn("multi-line", assess(dict(BASE, command="ls\nid"))[0])
-        self.assertIn("placeholders", assess(dict(BASE, placeholders=[{"name": "X"}]))[0])
-        self.assertIn("destructive", assess(dict(BASE, risk="destructive"))[0])
+    def test_plain_read_only_approvable(self):
+        a = assess("uptime", "read_only", self.C)
+        self.assertEqual(a.blockers, [])
+        self.assertEqual(a.effective, Risk.READ_ONLY)
+
+    def test_stricter_label_wins(self):
+        self.assertEqual(assess("uptime", "destructive", self.C).effective, Risk.DESTRUCTIVE)
+        self.assertEqual(assess("rm /tmp/x", "read_only", self.C).effective, Risk.DESTRUCTIVE)
+
+    def test_blockers(self):
+        self.assertIn("unsafe characters", assess("ls\x1b[2J", "read_only", self.C).blockers[0])
+        self.assertIn("multi-line", assess("ls\nid", "read_only", self.C).blockers[0])
+        self.assertIn("blocked by local policy", assess("rm -rf /", "read_only", self.C).blockers[0])
+        # placeholders and destructive commands are approvable (with input)
+        self.assertEqual(assess("mysql -p{{PW}}", "mutating", self.C).blockers, [])
+        self.assertEqual(assess("kill 1", "destructive", self.C).blockers, [])
 
 
 class TestAudit(unittest.TestCase):

@@ -68,7 +68,22 @@ class TestRequestShape(unittest.TestCase):
         self.assertEqual(req["output_config"], {"effort": "medium"})
         self.assertEqual(req["betas"], [llm.FALLBACK_BETA])
         self.assertEqual(req["fallbacks"], "default")
-        self.assertNotIn("thinking", req)  # adaptive by default on this model
+        self.assertEqual(req["thinking"], {"type": "adaptive", "display": "summarized"})
+
+    def test_reasoning_summary_can_be_turned_off(self):
+        c, client = conv(reasoning_summary=False)
+        c.ask("hello")
+        self.assertNotIn("thinking", client.requests[0])  # adaptive by default on this model
+
+    def test_reasoning_returned_when_no_text(self):
+        c, _ = conv()
+        r = c.ask("FAKE_SILENT\nFAKE_PROPOSE stat /dev/null")
+        self.assertEqual(r.text, "")
+        self.assertIn("not a device", r.reasoning)
+        self.assertEqual(r.proposal.command, "stat /dev/null")
+
+    def test_system_prompt_requires_visible_explanation(self):
+        self.assertIn("Always write your explanation as visible text", llm.SYSTEM_PROMPT)
 
     def test_fallbacks_off_uses_plain_endpoint(self):
         c, client = conv(fallbacks=False)
@@ -163,7 +178,7 @@ class TestToolResults(unittest.TestCase):
 
     def test_invalid_proposal_reported_as_error(self):
         c, client = conv()
-        r = c.ask("FAKE_PROPOSE mysql -p{{PW}}")  # undeclared placeholder
+        r = c.ask("FAKE_UNDECLARED\nFAKE_PROPOSE mysql -p{{PW}}")  # undeclared placeholder
         self.assertIsNone(r.proposal)
         self.assertIn("undeclared", r.proposal_error)
         c.ask("next")

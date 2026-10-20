@@ -66,12 +66,12 @@ class ChatUI:
                 self.out.write(text + "\n")
             self.out.flush()
 
-    def read_line(self) -> str:
+    def read_line(self, prompt: str | None = None) -> str:
         """Blocking input(); raises EOFError / KeyboardInterrupt like input()."""
         with self._lock:
             self._in_input = True
         try:
-            return input(self.prompt)
+            return input(self.prompt if prompt is None else prompt)
         finally:
             with self._lock:
                 self._in_input = False

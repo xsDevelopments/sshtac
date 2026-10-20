@@ -129,9 +129,18 @@ def main(argv: list[str] | None = None) -> int:
         from tac.tmuxctl import TmuxError
 
         try:
-            launch(ssh_args, load())
+            launch(ssh_args, load(), prompt_for_key=True)
         except (ConfigError, RuntimeDirError, TmuxError) as e:
             print(f"tac: {e}", file=sys.stderr)
+            return 1
+        except KeyboardInterrupt:
+            print("\ntac: interrupted; nothing was left running", file=sys.stderr)
+            return 130
+        except Exception as e:
+            if os.environ.get("TAC_DEBUG") == "1":
+                raise
+            print(f"tac: unexpected error: {type(e).__name__}: {e}", file=sys.stderr)
+            print("tac: run with TAC_DEBUG=1 for details", file=sys.stderr)
             return 1
         return 0
 

@@ -80,5 +80,55 @@ class TestConfig(unittest.TestCase):
             config.from_dict(data)
 
 
+
+class TestCredentialsPrompt(unittest.TestCase):
+    def setUp(self):
+        import os
+
+        self._env = dict(os.environ)
+        for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "TAC_TEST_FAKE_MODEL"):
+            os.environ.pop(v, None)
+
+    def tearDown(self):
+        import os
+
+        os.environ.clear()
+        os.environ.update(self._env)
+
+    def _ask(self, answer):
+        import os
+        from unittest import mock
+
+        from tac import launcher
+
+        prompts = []
+
+        def fake_getpass(prompt):
+            prompts.append(prompt)
+            return answer
+
+        with mock.patch("sys.stdin.isatty", return_value=True), \
+                mock.patch.object(launcher, "has_credentials", return_value=False), \
+                mock.patch("sys.stderr"):
+            launcher.ask_for_key(fake_getpass)
+        return prompts, os.environ.get("ANTHROPIC_API_KEY")
+
+    def test_key_goes_to_environment_only(self):
+        prompts, key = self._ask("  sk-ant-test-123  \n")
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("hidden", prompts[0])
+        self.assertEqual(key, "sk-ant-test-123")
+
+    def test_enter_skips(self):
+        _, key = self._ask("")
+        self.assertIsNone(key)
+
+    def test_not_asked_when_credentials_exist(self):
+        from tac.launcher import has_credentials
+
+        self.assertTrue(has_credentials({"ANTHROPIC_API_KEY": "x"}))
+        self.assertTrue(has_credentials({"ANTHROPIC_PROFILE": "work"}))
+
+
 if __name__ == "__main__":
     unittest.main()
