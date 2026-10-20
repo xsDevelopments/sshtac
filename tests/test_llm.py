@@ -90,6 +90,18 @@ class TestRequestShape(unittest.TestCase):
         c.ask("hello")
         self.assertNotIn("betas", client.requests[0])
 
+    def test_comment_is_its_own_block_and_survives_trimming(self):
+        c, client = conv()
+        c.ask('<terminal_output source="results_buffer">\nout\n</terminal_output>', "why did it fail?")
+        texts = [b["text"] for b in client.requests[0]["messages"][-1]["content"] if b["type"] == "text"]
+        self.assertEqual(texts[-1], "why did it fail?")
+        self.assertIn("<terminal_output", texts[-2])
+        c.last_input_tokens = c.trim_at_tokens  # force the one-time trim
+        c.ask("next")
+        first = [b["text"] for b in client.requests[1]["messages"][0]["content"] if b["type"] == "text"]
+        self.assertEqual(first[-1], "why did it fail?")
+        self.assertEqual(first[-2], llm.TRIM_STUB)
+
     def test_system_and_tools_identical_across_turns(self):
         c, client = conv()
         c.ask("one")

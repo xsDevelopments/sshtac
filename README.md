@@ -46,6 +46,7 @@ come back). The bottom line of the screen always shows the keys.
 | Ask the AI something | Click the chat pane (or **F4**) and type at `you>` |
 | Send new shell output | **F6**: everything since your last approved command |
 | Send a specific bit | Drag over it with the mouse, then **F5** |
+| Send output *with* a comment or question | Type it at `you>` without pressing Enter, then **F6** (or **F5**): it goes along with the output |
 | Run the proposed command | **F7** (destructive ones ask you to type `yes`) |
 | Reject it | **F8** |
 | Change it first | **F9** opens it in `$EDITOR` |
@@ -90,7 +91,8 @@ command line becomes the start of the next F6 capture.
 
 ## What gets sent to the AI
 
-Only what you send with F5/F6, plus what you type in the chat. Before anything leaves your machine:
+Only what you send with F5/F6, plus what you type in the chat (including a half-typed line, which
+F5/F6 send along; lines starting with `/` are left alone). Before anything leaves your machine:
 
 1. Terminal escape codes and control characters are removed; invisible Unicode is made visible.
 2. Placeholder values you entered this session are replaced with `[REDACTED:session_secret]`.

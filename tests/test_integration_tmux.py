@@ -187,6 +187,28 @@ class TestEndToEnd(unittest.TestCase):
         last_reply = self.chat_text().rsplit("FAKE MODEL received:", 1)[1]
         self.assertNotIn("FIRST", last_reply)
 
+    def chat_input_line(self) -> str:
+        return tmux("capture-pane", "-p", "-t", self.chat).rstrip("\n").rsplit("\n", 1)[-1].rstrip()
+
+    def test_2b_typed_chat_text_goes_with_the_output(self):
+        tmux("send-keys", "-t", self.chat, "-l", "why THIRD?")  # typed, not entered
+        tmux("send-keys", "-t", self.shell, "echo THIRD", "Enter")
+        time.sleep(0.4)
+        self.assertEqual(sshtac("send", "--results", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: self.chat_text().count("why THIRD?") >= 2), self.chat_text())
+        last_reply = self.chat_text().rsplit("FAKE MODEL received:", 1)[1]
+        self.assertLess(last_reply.index("</terminal_output>"), last_reply.index("why THIRD?"))
+        self.assertTrue(wait_for(lambda: self.chat_input_line() == "you>"), self.chat_input_line())
+        send = [e for e in self.audit_events() if e["event"] == "send"][-1]
+        self.assertEqual(send["chat"], "why THIRD?")
+
+    def test_2c_typed_slash_command_is_left_alone(self):
+        tmux("send-keys", "-t", self.chat, "-l", "/stat")
+        self.assertEqual(sshtac("send", "--selection", "--session", SESSION, stdin="sel-2c").returncode, 0)
+        self.assertTrue(wait_for(lambda: "sel-2c" in self.chat_text().rsplit("FAKE MODEL received:", 1)[-1]))
+        self.assertEqual(self.chat_input_line(), "you> /stat")
+        tmux("send-keys", "-t", self.chat, "C-u")
+
     def test_3_selection(self):
         r = sshtac("send", "--selection", "--session", SESSION, stdin="sel \x1b[31mAKIAIOSFODNN7EXAMPLE\x1b[0m")
         self.assertEqual(r.returncode, 0, r.stderr)

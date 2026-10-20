@@ -47,6 +47,7 @@ class ChatUI:
         self.colour = self.out.isatty()
         self._lock = threading.Lock()
         self._in_input = False
+        self._at_main_prompt = False
         try:
             import readline  # noqa: F401  (line editing for input())
 
@@ -70,8 +71,17 @@ class ChatUI:
         """Blocking input(); raises EOFError / KeyboardInterrupt like input()."""
         with self._lock:
             self._in_input = True
+            self._at_main_prompt = prompt is None
         try:
             return input(self.prompt if prompt is None else prompt)
         finally:
             with self._lock:
-                self._in_input = False
+                self._in_input = self._at_main_prompt = False
+
+    def draft(self) -> str:
+        """What is typed at the `you>` prompt but not yet entered ("" if the
+        prompt isn't up, e.g. during a y/N question)."""
+        with self._lock:
+            if not (self._at_main_prompt and self._readline):
+                return ""
+            return self._readline.get_line_buffer()

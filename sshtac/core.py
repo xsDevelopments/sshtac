@@ -35,6 +35,7 @@ LOG_KINDS = ("block", "edit")
 
 HELP = """\
 Type a question here and press Enter. Commands: /help /status /mark /sent
+Tip: type a comment without pressing Enter, then {send_results}/{send_selection}: it goes along with the output
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
 Leave: /detach (or Ctrl+B then d) keeps everything running — run sshtac again to come back.
@@ -232,7 +233,8 @@ class Core:
                     return {"ok": False, "error": "selection text missing"}
                 if len(text) > MAX_SELECTION:
                     return {"ok": False, "error": "selection too large"}
-            self._work.put(msg)
+            # Taken now, at the key press, not when the worker gets to it.
+            self._work.put({**msg, "draft": self._take_draft()})
             return {"ok": True}
         if cmd == "mark":
             self._work.put(msg)
@@ -398,18 +400,40 @@ class Core:
         text = self.tmux.capture(pane, rng.start, rng.end)
         return text.rstrip("\n"), "; ".join(notes) or None
 
+    def _take_draft(self) -> str:
+        """Take the half-typed chat line so a send (F5/F6) carries it along,
+        and clear it from the prompt. Slash commands are left alone."""
+        text = self.ui.draft()
+        if not text.strip() or text.lstrip().startswith("/"):
+            return ""
+        pane = self.tmux.get_option(self.session, "@sshtac_chat_pane")
+        if not pane:
+            return ""
+        try:
+            # End then C-u empties the line in readline's emacs and vi-insert
+            # modes and in libedit (macOS).
+            self.tmux.run("send-keys", "-t", pane, "End", "C-u")
+        except TmuxError:
+            return ""  # couldn't clear it, so leave it for the user to send
+        return text[:MAX_CHAT]
+
     def _do_send(self, msg: dict[str, Any]) -> None:
         source = msg["source"]
+        draft = msg.get("draft") or ""
         if source == "results_buffer":
             raw, note = self._capture_results()
         else:
             raw, note = msg["text"], None
         if not raw.strip():
             self.ui.say(f"[{source}] nothing new to send", "yellow", trusted=True)
+            if draft:
+                self.ui.say("sending your typed message on its own", "dim", trusted=True)
+                self._do_chat(draft, echo=True)
             return
         with self._lock:
             secrets = set(self.session_secrets)
         prepared = self.pipeline.prepare(raw, source, secrets)
+        chat = self._clean_chat(draft) if draft else None
         assert self.audit
         self.audit.event(
             "send",
@@ -418,14 +442,19 @@ class Core:
             redactions=dict(prepared.redactions),
             truncated=bool(prepared.truncation),
             note=note,
+            chat=chat,
         )
         self.ui.say("─" * 40, "dim", trusted=True)
         self.ui.say(f"sent {source.replace('_', ' ')}: {prepared.summary()}", "cyan", trusted=True)
         if note:
             self.ui.say(f"note: {note}", "yellow")
-        self._ask(prepared.text)
+        if chat:
+            # The prompt line was cleared, so show what went with the output.
+            self.ui.say(f"{self.ui.prompt}{chat}")
+        # Your words go after the output, outside the <terminal_output> tags.
+        self._ask(prepared.text, chat)
 
-    def _do_chat(self, text: str) -> None:
+    def _clean_chat(self, text: str) -> str:
         # Your own typing is trusted (not wrapped), but it still goes through
         # stripping and redaction in case you paste something sensitive.
         with self._lock:
@@ -434,20 +463,26 @@ class Core:
         clean, counts = redact(clean, self.pipeline.patterns, self.pipeline.entropy)
         if n or counts:
             self.ui.say("note: redacted part of your message before sending", "yellow", trusted=True)
+        return clean
+
+    def _do_chat(self, text: str, echo: bool = False) -> None:
+        clean = self._clean_chat(text)
+        if echo:
+            self.ui.say(f"{self.ui.prompt}{clean}")
         assert self.audit
         self.audit.event("chat", text=clean)
         self._ask(clean)
 
-    def _ask(self, text: str) -> None:
+    def _ask(self, text: str, comment: str | None = None) -> None:
         conv = self.conversation
         if conv is None:
             self.ui.say("(AI is disabled — see the message above)", "dim", trusted=True)
             return
-        self.last_sent = text
+        self.last_sent = f"{text}\n\n{comment}" if comment else text
         self.ui.say("… asking the model", "dim", trusted=True)
         assert self.audit
         try:
-            reply = conv.ask(text)
+            reply = conv.ask(text, comment)
         except Exception as e:
             err = llm.describe_error(e)
             self.ui.say(f"model call failed: {err}", "red")

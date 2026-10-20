@@ -284,7 +284,7 @@ class Conversation:
 
     # --------------------------------------------------------------- request
 
-    def _user_turn(self, text: str) -> tuple[dict[str, Any], list[_ToolUse], int]:
+    def _user_turn(self, text: str, comment: str | None = None) -> tuple[dict[str, Any], list[_ToolUse], int]:
         """Build the next user message. Returns it with the tool uses it closes
         and how many notes it consumed. Call with the lock held."""
         blocks: list[dict[str, Any]] = []
@@ -304,6 +304,9 @@ class Conversation:
         if preamble:
             blocks.append({"type": "text", "text": "\n".join(preamble)})
         blocks.append({"type": "text", "text": text})
+        if comment:
+            # Its own block, so trimming old terminal output never drops it.
+            blocks.append({"type": "text", "text": comment})
         return {"role": "user", "content": blocks}, closing, len(self.notes)
 
     def _request(self, messages: list[dict[str, Any]]) -> Any:
@@ -348,12 +351,13 @@ class Conversation:
         self.last_input_tokens = 0
         return True
 
-    def ask(self, text: str) -> Reply:
-        """Send one user turn. Raises the SDK's exceptions on API failure; the
+    def ask(self, text: str, comment: str | None = None) -> Reply:
+        """Send one user turn; `comment` is your own words sent along with
+        terminal output. Raises the SDK's exceptions on API failure; the
         history is unchanged in that case."""
         with self._lock:
             trimmed = self._maybe_trim()
-            user, closing, n_notes = self._user_turn(text)
+            user, closing, n_notes = self._user_turn(text, comment)
             messages = self.messages + [user]
         resp = self._request(messages)
         content = [_block_dict(b) for b in (resp.content or [])]

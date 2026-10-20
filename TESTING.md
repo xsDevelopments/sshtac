@@ -100,6 +100,12 @@ Expect: the first send contains `one`. The second contains `two` but not `one` (
 Expect: the highlight stays until F5. Only the selected text is sent (check with `/sent`). Dragging
 never selects into other panes. F5 with nothing selected shows "Select text first…".
 
+**T7b Comment with output.** Type `what does this mean?` in the chat but don't press Enter. In the
+shell run `ls /nonexistent`, then press **F6**.
+Expect: the chat shows `you> what does this mean?` under the "sent results buffer" line, the input
+line is empty again, and the AI answers the question about that output. `/sent` shows the output
+followed by your question. A half-typed `/command` stays in the input line instead.
+
 **T8 Scrolling.** Scroll the chat pane with the wheel, then press **q**.
 Expect: the scroll works, and q returns to the live view with the prompt intact.
 
