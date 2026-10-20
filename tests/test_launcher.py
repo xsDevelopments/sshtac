@@ -1,8 +1,8 @@
 import unittest
 
-from tac import config
-from tac.launcher import _shell_cmd, session_name, ssh_destination
-from tac.tmuxctl import parse_version
+from sshtac import config
+from sshtac.launcher import _shell_cmd, session_name, ssh_destination
+from sshtac.tmuxctl import parse_version
 
 
 class TestSshParsing(unittest.TestCase):
@@ -23,17 +23,17 @@ class TestSshParsing(unittest.TestCase):
             self.assertEqual(ssh_destination(list(args)), want, args)
 
     def test_session_name(self):
-        self.assertEqual(session_name([]), "tac-local")
-        self.assertEqual(session_name(["admin@web-01.example.com"]), "tac-web-01-example-com")
-        self.assertEqual(session_name(["ssh://u@h.x:22"]), "tac-h-x-22")
-        self.assertEqual(session_name(["-p", "22", "a;b$(c)"]), "tac-a-b-c")
-        self.assertRegex(session_name(["x" * 200]), r"^tac-x{40}$")
+        self.assertEqual(session_name([]), "sshtac-local")
+        self.assertEqual(session_name(["admin@web-01.example.com"]), "sshtac-web-01-example-com")
+        self.assertEqual(session_name(["ssh://u@h.x:22"]), "sshtac-h-x-22")
+        self.assertEqual(session_name(["-p", "22", "a;b$(c)"]), "sshtac-a-b-c")
+        self.assertRegex(session_name(["x" * 200]), r"^sshtac-x{40}$")
 
 
 class TestShellCmd(unittest.TestCase):
     def test_quoting_and_hash_escape(self):
-        cmd = _shell_cmd(["/opt/py #3/python", "-m", "tac"], {"PYTHONPATH": "/a b"})
-        self.assertEqual(cmd, "env PYTHONPATH='/a b' '/opt/py ##3/python' -m tac")
+        cmd = _shell_cmd(["/opt/py #3/python", "-m", "sshtac"], {"PYTHONPATH": "/a b"})
+        self.assertEqual(cmd, "env PYTHONPATH='/a b' '/opt/py ##3/python' -m sshtac")
 
 
 class TestTmuxVersion(unittest.TestCase):
@@ -82,8 +82,8 @@ class TestConfig(unittest.TestCase):
 
 
 class TestCredentials(unittest.TestCase):
-    """Key lookup order and the key file. TAC_CONFIG points at a temp dir, so
-    the real ~/.config/tac is never touched."""
+    """Key lookup order and the key file. SSHTAC_CONFIG points at a temp dir, so
+    the real ~/.config/sshtac is never touched."""
 
     def setUp(self):
         import os
@@ -91,10 +91,10 @@ class TestCredentials(unittest.TestCase):
         from pathlib import Path
 
         self._env = dict(os.environ)
-        for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "TAC_TEST_FAKE_MODEL"):
+        for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "SSHTAC_TEST_FAKE_MODEL"):
             os.environ.pop(v, None)
         self.tmp = tempfile.TemporaryDirectory()
-        os.environ["TAC_CONFIG"] = str(Path(self.tmp.name) / "tac" / "config.toml")
+        os.environ["SSHTAC_CONFIG"] = str(Path(self.tmp.name) / "sshtac" / "config.toml")
 
     def tearDown(self):
         import os
@@ -107,7 +107,7 @@ class TestCredentials(unittest.TestCase):
         import os
         from unittest import mock
 
-        from tac import launcher
+        from sshtac import launcher
 
         prompts = []
 
@@ -133,7 +133,7 @@ class TestCredentials(unittest.TestCase):
     def test_prompt_offers_to_save_and_saves_privately(self):
         import os
 
-        from tac import apikey
+        from sshtac import apikey
 
         self.run_ask("sk-ant-saved", save="y")
         p = apikey.path()
@@ -141,7 +141,7 @@ class TestCredentials(unittest.TestCase):
         self.assertEqual(apikey.read(), "sk-ant-saved")
 
     def test_declining_save_writes_nothing(self):
-        from tac import apikey
+        from sshtac import apikey
 
         self.run_ask("sk-ant-x", save="")
         self.assertFalse(apikey.path().exists())
@@ -151,7 +151,7 @@ class TestCredentials(unittest.TestCase):
         self.assertIsNone(key)
 
     def test_key_file_used_without_prompting(self):
-        from tac import apikey
+        from sshtac import apikey
 
         apikey.write("sk-ant-from-file")
         prompts, key = self.run_ask("should-not-be-asked")
@@ -161,7 +161,7 @@ class TestCredentials(unittest.TestCase):
     def test_key_file_beats_ant_profile_and_env_beats_key_file(self):
         import os
 
-        from tac import apikey
+        from sshtac import apikey
 
         apikey.write("sk-ant-from-file")
         _, key = self.run_ask(ant_profile=True)
@@ -173,7 +173,7 @@ class TestCredentials(unittest.TestCase):
     def test_readable_key_file_refused(self):
         import os
 
-        from tac import apikey
+        from sshtac import apikey
 
         p = apikey.write("sk-ant-x")
         os.chmod(p, 0o644)
@@ -187,7 +187,7 @@ class TestCredentials(unittest.TestCase):
     def test_key_file_formats(self):
         import os
 
-        from tac import apikey
+        from sshtac import apikey
 
         p = apikey.path()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -203,8 +203,8 @@ class TestCredentials(unittest.TestCase):
         from contextlib import redirect_stdout
         from unittest import mock
 
-        from tac import apikey
-        from tac.cli import main
+        from sshtac import apikey
+        from sshtac.cli import main
 
         with mock.patch("getpass.getpass", return_value="sk-ant-secret-value"), redirect_stdout(io.StringIO()):
             self.assertEqual(main(["config", "--set-key"]), 0)
@@ -220,7 +220,7 @@ class TestCredentials(unittest.TestCase):
         self.assertFalse(apikey.path().exists())
 
     def test_has_env_credentials(self):
-        from tac.launcher import has_credentials, has_env_credentials
+        from sshtac.launcher import has_credentials, has_env_credentials
 
         self.assertTrue(has_env_credentials({"ANTHROPIC_API_KEY": "x"}))
         self.assertTrue(has_credentials({"ANTHROPIC_PROFILE": "work"}))
@@ -277,11 +277,11 @@ class TestConfigFile(unittest.TestCase):
         from pathlib import Path
         from unittest import mock
 
-        from tac.cli import main
+        from sshtac.cli import main
 
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / "tac" / "config.toml"
-            with mock.patch.dict(os.environ, {"TAC_CONFIG": str(p)}):
+            p = Path(d) / "sshtac" / "config.toml"
+            with mock.patch.dict(os.environ, {"SSHTAC_CONFIG": str(p)}):
                 out = io.StringIO()
                 with redirect_stdout(out):
                     self.assertEqual(main(["config", "--init"]), 0)

@@ -1,6 +1,6 @@
 import unittest
 
-from tac.pipeline import (
+from sshtac.pipeline import (
     EntropySettings,
     Pipeline,
     compile_patterns,

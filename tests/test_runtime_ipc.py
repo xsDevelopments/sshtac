@@ -5,7 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from tac import ipc, runtime
+from sshtac import ipc, runtime
 
 
 class TestRuntimeDir(unittest.TestCase):
@@ -17,15 +17,15 @@ class TestRuntimeDir(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_creates_0700(self):
-        d = runtime.ensure_dir(self.base / "tac")
+        d = runtime.ensure_dir(self.base / "sshtac")
         self.assertEqual(os.stat(d).st_mode & 0o777, 0o700)
 
     def test_existing_ok(self):
-        runtime.ensure_dir(self.base / "tac")
-        runtime.ensure_dir(self.base / "tac")
+        runtime.ensure_dir(self.base / "sshtac")
+        runtime.ensure_dir(self.base / "sshtac")
 
     def test_rejects_loose_permissions(self):
-        d = self.base / "tac"
+        d = self.base / "sshtac"
         d.mkdir(mode=0o755)
         os.chmod(d, 0o755)
         with self.assertRaises(runtime.RuntimeDirError):
@@ -34,24 +34,24 @@ class TestRuntimeDir(unittest.TestCase):
     def test_rejects_symlink(self):
         real = self.base / "elsewhere"
         real.mkdir(mode=0o700)
-        (self.base / "tac").symlink_to(real)
+        (self.base / "sshtac").symlink_to(real)
         with self.assertRaises(runtime.RuntimeDirError):
-            runtime.ensure_dir(self.base / "tac")
+            runtime.ensure_dir(self.base / "sshtac")
 
     def test_session_names(self):
-        p = runtime.socket_path("tac", "tac-web-01", self.base / "tac")
-        self.assertEqual(p, self.base / "tac" / "tac" / "tac-web-01.sock")
+        p = runtime.socket_path("sshtac", "sshtac-web-01", self.base / "sshtac")
+        self.assertEqual(p, self.base / "sshtac" / "sshtac" / "sshtac-web-01.sock")
         for bad in ("../x", "a b", "", "x;y", "a/b", "x" * 65):
             with self.assertRaises(ValueError, msg=bad):
-                runtime.socket_path("tac", bad, self.base / "tac")
+                runtime.socket_path("sshtac", bad, self.base / "sshtac")
             with self.assertRaises(ValueError, msg=bad):
-                runtime.socket_path(bad, "tac-local", self.base / "tac")
+                runtime.socket_path(bad, "sshtac-local", self.base / "sshtac")
 
     def test_same_session_on_two_servers_does_not_collide(self):
-        # Regression: a test server's tac-local used to share a socket with a
-        # live tac-local on the real server.
-        a = runtime.socket_path("tac", "tac-local", self.base / "tac")
-        b = runtime.socket_path("tac-test-1", "tac-local", self.base / "tac")
+        # Regression: a test server's sshtac-local used to share a socket with a
+        # live sshtac-local on the real server.
+        a = runtime.socket_path("sshtac", "sshtac-local", self.base / "sshtac")
+        b = runtime.socket_path("sshtac-test-1", "sshtac-local", self.base / "sshtac")
         self.assertNotEqual(a, b)
         for d in (a.parent, b.parent):
             self.assertEqual(os.stat(d).st_mode & 0o777, 0o700)

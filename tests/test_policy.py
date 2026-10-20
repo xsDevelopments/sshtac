@@ -1,6 +1,6 @@
 import unittest
 
-from tac.policy import Risk, classify, effective
+from sshtac.policy import Risk, classify, effective
 
 R, M, D, B = Risk.READ_ONLY, Risk.MUTATING, Risk.DESTRUCTIVE, Risk.BLOCKED
 
@@ -196,7 +196,7 @@ class TestDestructive(PolicyCase):
         })
 
     def test_replayed_real_session_false_positives(self):
-        # Commands from real sessions that tac rated stricter than they are.
+        # Commands from real sessions that sshtac rated stricter than they are.
         self.check({
             "for a in \"25 -starttls smtp\" \"465\"; do p=${a%% *}; o=${a#\"$p\"}; echo \"== port $p\"; done": M,
             "apt-get -s autoremove --purge | grep -E '^(Remv|[0-9]+ upgraded)'": R,

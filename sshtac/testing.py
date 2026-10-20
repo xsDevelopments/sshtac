@@ -1,6 +1,6 @@
 """A scripted stand-in for the Anthropic client, for tests and manual dry runs.
 
-Enabled in the core with TAC_TEST_FAKE_MODEL=1. It makes no network calls:
+Enabled in the core with SSHTAC_TEST_FAKE_MODEL=1. It makes no network calls:
 
 * it replies with everything it received in the last user turn (tool results,
   notes and text), so tests can see exactly what would have gone to the API;

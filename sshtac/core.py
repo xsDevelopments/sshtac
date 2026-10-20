@@ -20,13 +20,13 @@ import sys
 import threading
 from typing import Any
 
-from tac import ipc, llm, policy, runtime
-from tac.audit import AuditLog
-from tac.config import Config
-from tac.marks import Mark, capture_range, mark_at
-from tac.pipeline import SOURCES, redact, redact_session_secrets, strip
-from tac.tmuxctl import Tmux, TmuxError
-from tac.ui import ChatUI
+from sshtac import ipc, llm, policy, runtime
+from sshtac.audit import AuditLog
+from sshtac.config import Config
+from sshtac.marks import Mark, capture_range, mark_at
+from sshtac.pipeline import SOURCES, redact, redact_session_secrets, strip
+from sshtac.tmuxctl import Tmux, TmuxError
+from sshtac.ui import ChatUI
 
 MAX_SELECTION = 2 * 1024 * 1024
 MAX_CHAT = 20_000
@@ -37,8 +37,8 @@ HELP = """\
 Type a question here and press Enter. Commands: /help /status /mark /sent
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
-Leave: /detach (or Ctrl+B then d) keeps everything running — run tac again to come back.
-       /quit ends tac completely, including the shell and any SSH connection."""
+Leave: /detach (or Ctrl+B then d) keeps everything running — run sshtac again to come back.
+       /quit ends sshtac completely, including the shell and any SSH connection."""
 
 OUTCOMES = ("approved", "rejected", "superseded")
 
@@ -66,9 +66,9 @@ class Core:
         self.conversation: llm.Conversation | None = None
         self._client_factory = client_factory
         self.last_sent = ""
-        self.fake_model = os.environ.get("TAC_TEST_FAKE_MODEL") == "1"
+        self.fake_model = os.environ.get("SSHTAC_TEST_FAKE_MODEL") == "1"
         if self.fake_model:
-            from tac.testing import FakeClient
+            from sshtac.testing import FakeClient
 
             self._client_factory = FakeClient
 
@@ -87,12 +87,12 @@ class Core:
         )
         self.server.start()
         threading.Thread(target=self._worker, daemon=True).start()
-        self.ui.say(f"tac — session {self.session} — model {self.cfg.model}", "bold", trusted=True)
+        self.ui.say(f"sshtac — session {self.session} — model {self.cfg.model}", "bold", trusted=True)
         self.ui.say(HELP.format(**self.cfg.keys), "dim", trusted=True)
         self.ui.say(f"audit log: {self.audit.path}", "dim", trusted=True)
         self.ui.say(f"config: {self.cfg.source or 'built-in defaults (no config file)'}", "dim", trusted=True)
         if self.fake_model:
-            self.ui.say("TAC_TEST_FAKE_MODEL=1: using the scripted fake model, no API calls", "boldyellow", trusted=True)
+            self.ui.say("SSHTAC_TEST_FAKE_MODEL=1: using the scripted fake model, no API calls", "boldyellow", trusted=True)
             self.audit.event("fake_model")
         self._init_conversation(ssh_args)
         try:
@@ -106,7 +106,7 @@ class Core:
         return 0
 
     def _ssh_args(self) -> list[str]:
-        raw = self.tmux.get_option(self.session, "@tac_ssh_args")
+        raw = self.tmux.get_option(self.session, "@sshtac_ssh_args")
         try:
             args = json.loads(raw) if raw else []
         except json.JSONDecodeError:
@@ -154,7 +154,7 @@ class Core:
                 continue
             except EOFError:
                 print()
-                self.ui.say("(Ctrl-D ignored — use `tac stop` to end the session)", "dim", trusted=True)
+                self.ui.say("(Ctrl-D ignored — use `sshtac stop` to end the session)", "dim", trusted=True)
                 continue
             if line:
                 self._handle_chat(line)
@@ -186,7 +186,7 @@ class Core:
 
     def _quit(self) -> None:
         try:
-            ans = self.ui.read_line("End tac now? This closes the shell and any SSH connection. [y/N] ")
+            ans = self.ui.read_line("End sshtac now? This closes the shell and any SSH connection. [y/N] ")
         except (EOFError, KeyboardInterrupt):
             ans = ""
         if ans.strip().lower() not in ("y", "yes"):
@@ -375,9 +375,9 @@ class Core:
                     self.audit.event("error", error=f"{type(e).__name__}: {e}")
 
     def _shell_pane(self) -> str:
-        pane = self.tmux.get_option(self.session, "@tac_shell_pane")
+        pane = self.tmux.get_option(self.session, "@sshtac_shell_pane")
         if not pane:
-            raise RuntimeError("@tac_shell_pane is not set on this session")
+            raise RuntimeError("@sshtac_shell_pane is not set on this session")
         return pane
 
     def _capture_results(self) -> tuple[str, str | None]:
@@ -546,7 +546,7 @@ def main(session: str, cfg: Config) -> int:
     try:
         return Core(session, cfg).run()
     except (ipc.IPCError, runtime.RuntimeDirError, OSError) as e:
-        print(f"tac core: {e}", file=sys.stderr)
+        print(f"sshtac core: {e}", file=sys.stderr)
         try:
             input("press Enter to close")
         except EOFError:

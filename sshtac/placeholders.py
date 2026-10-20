@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from tac import charsafe
+from sshtac import charsafe
 
 TOKEN_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 

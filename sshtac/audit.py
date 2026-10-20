@@ -1,6 +1,6 @@
 """Append-only JSONL audit log, readable as an incident timeline.
 
-~/.local/state/tac/audit-<session>-<UTC timestamp>.jsonl (respects
+~/.local/state/sshtac/audit-<session>-<UTC timestamp>.jsonl (respects
 XDG_STATE_HOME), directory 0700, file 0600, created exclusively and never
 followed through a symlink.
 
@@ -20,7 +20,7 @@ from typing import Any
 
 def state_dir() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return Path(base) / "tac"
+    return Path(base) / "sshtac"
 
 
 def _now() -> str:

@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tac import charsafe
-from tac.audit import AuditLog
-from tac.executor import assess
-from tac.policy import Classifier, Risk
+from sshtac import charsafe
+from sshtac.audit import AuditLog
+from sshtac.executor import assess
+from sshtac.policy import Classifier, Risk
 
 class TestCharSafety(unittest.TestCase):
     def test_plain_ok(self):
@@ -70,13 +70,13 @@ class TestAssess(unittest.TestCase):
 class TestAudit(unittest.TestCase):
     def test_file_mode_and_records(self):
         with tempfile.TemporaryDirectory() as d:
-            log = AuditLog("tac-local", Path(d) / "tac")
+            log = AuditLog("sshtac-local", Path(d) / "sshtac")
             log.event("session_start", target="local shell")
             log.event("send", source="selection", text="password=[REDACTED:password]")
             log.close()
             log.event("after_close")  # ignored, no crash
             self.assertEqual(stat.S_IMODE(os.stat(log.path).st_mode), 0o600)
-            self.assertEqual(stat.S_IMODE(os.stat(Path(d) / "tac").st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(os.stat(Path(d) / "sshtac").st_mode), 0o700)
             recs = [json.loads(l) for l in log.path.read_text().splitlines()]
             self.assertEqual([r["event"] for r in recs], ["session_start", "send"])
             self.assertEqual([r["seq"] for r in recs], [1, 2])
@@ -84,7 +84,7 @@ class TestAudit(unittest.TestCase):
 
     def test_refuses_symlink(self):
         with tempfile.TemporaryDirectory() as d:
-            base = Path(d) / "tac"
+            base = Path(d) / "sshtac"
             base.mkdir(mode=0o700)
             log = AuditLog("s", base)
             log.close()

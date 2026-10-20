@@ -1,4 +1,4 @@
-"""Thin wrapper around the tmux CLI. Every tmux call in tac goes through here.
+"""Thin wrapper around the tmux CLI. Every tmux call in sshtac goes through here.
 
 All calls use a dedicated server (`tmux -L <socket_name>`), and arguments are
 passed as argv, never through a shell.
@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 
-from tac.marks import PaneState
+from sshtac.marks import PaneState
 
 MIN_VERSION = (3, 2)
 
@@ -28,7 +28,7 @@ def parse_version(text: str) -> tuple[int, int]:
 
 
 class Tmux:
-    def __init__(self, socket_name: str = "tac", binary: str | None = None):
+    def __init__(self, socket_name: str = "sshtac", binary: str | None = None):
         self.socket_name = socket_name
         self.binary = binary or shutil.which("tmux") or "tmux"
 

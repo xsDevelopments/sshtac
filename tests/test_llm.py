@@ -1,8 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
-from tac import llm
-from tac.testing import FakeClient
+from sshtac import llm
+from sshtac.testing import FakeClient
 
 
 def conv(**kw) -> tuple[llm.Conversation, FakeClient]:
@@ -114,7 +114,7 @@ class TestRequestShape(unittest.TestCase):
         c, client = conv(session_context="The shell pane is running ssh web-01.")
         c.ask("a")
         c.ask("b")
-        self.assertIn("[tac] The shell pane is running ssh web-01.", llm_text(client.requests[0]))
+        self.assertIn("[sshtac] The shell pane is running ssh web-01.", llm_text(client.requests[0]))
         self.assertNotIn("ssh web-01", client.requests[1]["messages"][-1]["content"][-1]["text"])
 
 
@@ -148,7 +148,7 @@ class TestToolResults(unittest.TestCase):
         c.record_outcome(r.proposal.id, "rejected")
         c.ask("ok")
         last = llm_text(client.requests[2])
-        self.assertIn(f"[tac] Update on proposal {r.proposal.id[-8:]}: The human rejected", last)
+        self.assertIn(f"[sshtac] Update on proposal {r.proposal.id[-8:]}: The human rejected", last)
         c.ask("again")
         self.assertNotIn("Update on proposal", llm_text(client.requests[3]))
 

@@ -29,12 +29,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from tac import charsafe, ipc, placeholders, policy, runtime
-from tac.config import Config
-from tac.pipeline import strip
-from tac.policy import Risk
-from tac.tmuxctl import Tmux, TmuxError
-from tac.ui import style
+from sshtac import charsafe, ipc, placeholders, policy, runtime
+from sshtac.config import Config
+from sshtac.pipeline import strip
+from sshtac.policy import Risk
+from sshtac.tmuxctl import Tmux, TmuxError
+from sshtac.ui import style
 
 CONNECT_TIMEOUT = 15.0
 RISK_COLOUR = {
@@ -164,8 +164,8 @@ class Executor:
     # ---------------------------------------------------------------- focus / input
 
     def _panes(self) -> tuple[str | None, str | None]:
-        return (self.tmux.get_option(self.session, "@tac_shell_pane"),
-                self.tmux.get_option(self.session, "@tac_exec_pane"))
+        return (self.tmux.get_option(self.session, "@sshtac_shell_pane"),
+                self.tmux.get_option(self.session, "@sshtac_exec_pane"))
 
     def focus_self(self) -> None:
         _, me = self._panes()
@@ -354,7 +354,7 @@ class Executor:
             raise Cancelled("a full-screen program is open in the shell pane")
         if self.tmux.pane_in_mode(shell):
             raise Cancelled("the shell pane is in copy mode (press q there first)")
-        self.tmux.paste(shell, final, f"tac-{secrets.token_hex(8)}")
+        self.tmux.paste(shell, final, f"sshtac-{secrets.token_hex(8)}")
         # The mark goes on the command line itself, before it runs, so the
         # next results capture starts with the command and its output.
         mark = ipc.request(self.path, {"cmd": "mark_now"})
@@ -405,7 +405,7 @@ def main(session: str, cfg: Config) -> int:
     signal.signal(signal.SIGHUP, _exit)
     signal.signal(signal.SIGTERM, _exit)
     # Only the core talks to the API. Don't hand the key to $EDITOR & co.
-    from tac.launcher import CREDENTIAL_VARS
+    from sshtac.launcher import CREDENTIAL_VARS
 
     for var in CREDENTIAL_VARS:
         os.environ.pop(var, None)

@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import unittest
 
-from tac.placeholders import PlaceholderError, names, substitute
+from sshtac.placeholders import PlaceholderError, names, substitute
 
 NASTY = ["simple", "has space", "it's", 'dq"x', "$(id)", "`id`", "a!b", "back\\slash",
          "semi;colon", "*glob?", "~tilde", "$HOME", "x' ; rm -rf / ; echo '", "--flag"]
@@ -67,7 +67,7 @@ class TestSubstitute(unittest.TestCase):
         self.assertEqual(out, "a!!b")
 
     def test_policy_sees_quoted_value(self):
-        from tac.policy import Risk, classify
+        from sshtac.policy import Risk, classify
 
         cmd = substitute("echo {{V}}", {"V": "x; rm -rf /"})
         self.assertEqual(shlex.split(cmd), ["echo", "x; rm -rf /"])

@@ -1,8 +1,8 @@
 """Private runtime directory for sockets and temp files.
 
-$XDG_RUNTIME_DIR/tac/ when available, else /tmp/tac-$UID/, with one
-subdirectory per tac tmux server (`tmux -L <name>`): session names are only
-unique within a server, so two servers can both have a `tac-local`.
+$XDG_RUNTIME_DIR/sshtac/ when available, else /tmp/sshtac-$UID/, with one
+subdirectory per sshtac tmux server (`tmux -L <name>`): session names are only
+unique within a server, so two servers can both have a `sshtac-local`.
 
 Each directory must be a real directory (not a symlink), owned by us, mode
 0700 — anything else in a shared /tmp could be an attacker's, so we refuse
@@ -26,8 +26,8 @@ class RuntimeDirError(Exception):
 def base_dir() -> Path:
     xdg = os.environ.get("XDG_RUNTIME_DIR")
     if xdg and os.path.isdir(xdg):
-        return Path(xdg) / "tac"
-    return Path(f"/tmp/tac-{os.getuid()}")
+        return Path(xdg) / "sshtac"
+    return Path(f"/tmp/sshtac-{os.getuid()}")
 
 
 def _check(path: Path) -> None:

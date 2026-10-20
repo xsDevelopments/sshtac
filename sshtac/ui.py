@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 import threading
 
-from tac.pipeline import strip
+from sshtac.pipeline import strip
 
 _COLOURS = {
     "dim": "2",

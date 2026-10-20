@@ -1,19 +1,19 @@
 """Command-line entry point.
 
-    tac [ssh args...]          start or attach (no args: a local shell)
-    tac -- <ssh args...>       same, when the host is named like a subcommand
-    tac stop [--session S]     end a tac session
-    tac config                 show which config file is used, and check it
-    tac config --init          create ~/.config/tac/config.toml from the example
-    tac config --example       print the documented example config
-    tac config --set-key       save your API key to ~/.config/tac/api_key (private file)
-    tac config --remove-key    delete that file
+    sshtac [ssh args...]          start or attach (no args: a local shell)
+    sshtac -- <ssh args...>       same, when the host is named like a subcommand
+    sshtac stop [--session S]     end a sshtac session
+    sshtac config                 show which config file is used, and check it
+    sshtac config --init          create ~/.config/sshtac/config.toml from the example
+    sshtac config --example       print the documented example config
+    sshtac config --set-key       save your API key to ~/.config/sshtac/api_key (private file)
+    sshtac config --remove-key    delete that file
 
 Internal (used by panes and key bindings):
-    tac core|exec --session S
-    tac send --selection|--results --session S
-    tac approve|reject|edit --session S
-    tac _ssh | _shell
+    sshtac core|exec --session S
+    sshtac send --selection|--results --session S
+    sshtac approve|reject|edit --session S
+    sshtac _ssh | _shell
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import argparse
 import os
 import sys
 
-from tac import __version__
+from sshtac import __version__
 
 CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark"}
 INTERNAL = {"core", "exec", "stop", "config", "_ssh", "_shell"} | CLIENT_CMDS
@@ -30,7 +30,7 @@ MAX_SELECTION_READ = 2 * 1024 * 1024
 
 
 def _parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tac", add_help=False)
+    p = argparse.ArgumentParser(prog="sshtac", add_help=False)
     p.add_argument("--socket", help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("core", "exec"):
@@ -54,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _load_config(socket: str | None):
-    from tac import config
+    from sshtac import config
 
     cfg = config.load()
     if socket:
@@ -65,7 +65,7 @@ def _load_config(socket: str | None):
 def _resolve_session(tmux, given: str | None) -> str:
     if given:
         return given
-    # Inside a tac pane? Only trust TMUX_PANE if $TMUX points at the tac server;
+    # Inside a sshtac pane? Only trust TMUX_PANE if $TMUX points at the sshtac server;
     # a pane id from your normal tmux server means nothing on ours.
     tmux_env = os.environ.get("TMUX", "").split(",")[0]
     pane = os.environ.get("TMUX_PANE")
@@ -73,17 +73,17 @@ def _resolve_session(tmux, given: str | None) -> str:
         name = tmux.display(pane, "#{session_name}")
         if name:
             return name
-    sessions = [s for s in tmux.list_sessions() if tmux.get_option(s, "@tac_session")]
+    sessions = [s for s in tmux.list_sessions() if tmux.get_option(s, "@sshtac_session")]
     if len(sessions) == 1:
         return sessions[0]
     if not sessions:
-        raise SystemExit("tac: no tac session is running")
-    raise SystemExit(f"tac: several tac sessions running, pick one with --session: {', '.join(sessions)}")
+        raise SystemExit("sshtac: no sshtac session is running")
+    raise SystemExit(f"sshtac: several sshtac sessions running, pick one with --session: {', '.join(sessions)}")
 
 
 def _client(args, cfg) -> int:
-    from tac import ipc, runtime
-    from tac.tmuxctl import Tmux
+    from sshtac import ipc, runtime
+    from sshtac.tmuxctl import Tmux
 
     tmux = Tmux(cfg.tmux_socket)
     session = _resolve_session(tmux, args.session)
@@ -103,7 +103,7 @@ def _client(args, cfg) -> int:
     except ipc.IPCError as e:
         reply = {"ok": False, "error": str(e)}
     if not reply.get("ok"):
-        err = f"tac: {reply.get('error', 'request failed')}"
+        err = f"sshtac: {reply.get('error', 'request failed')}"
         print(err, file=sys.stderr)
         tmux.display_message(f"={session}:", err)
         return 1
@@ -111,18 +111,18 @@ def _client(args, cfg) -> int:
 
 
 def _stop(args, cfg) -> int:
-    from tac.tmuxctl import Tmux
+    from sshtac.tmuxctl import Tmux
 
     tmux = Tmux(cfg.tmux_socket)
     session = _resolve_session(tmux, args.session)
     tmux.kill_session(session)
-    print(f"tac: stopped {session}")
+    print(f"sshtac: stopped {session}")
     return 0
 
 
 def _key_status() -> str:
-    from tac import apikey
-    from tac.launcher import has_env_credentials
+    from sshtac import apikey
+    from sshtac.launcher import has_env_credentials
 
     if has_env_credentials():
         return "API key: from this terminal's environment (takes priority over the key file)"
@@ -133,11 +133,11 @@ def _key_status() -> str:
         return f"API key: PROBLEM: {e}"
     if key:
         return f"API key: {p} (private, owner-only)"
-    return f"API key: not set; tac will ask (save one with: tac config --set-key)"
+    return f"API key: not set; sshtac will ask (save one with: sshtac config --set-key)"
 
 
 def _config_cmd(args) -> int:
-    from tac import apikey, config
+    from sshtac import apikey, config
 
     path = config.config_path()
     if args.set_key:
@@ -148,32 +148,32 @@ def _config_cmd(args) -> int:
             return 1
         key = getpass.getpass("Paste your API key (hidden): ").strip()
         if not key:
-            print("tac: nothing saved", file=sys.stderr)
+            print("sshtac: nothing saved", file=sys.stderr)
             return 1
         if not key.startswith("sk-ant-"):
-            print("tac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
-        print(f"tac: saved to {apikey.write(key)} (readable only by you)")
+            print("sshtac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
+        print(f"sshtac: saved to {apikey.write(key)} (readable only by you)")
         return 0
     if args.remove_key:
         p = apikey.path()
-        print(f"tac: removed {p}" if apikey.remove() else f"tac: there was no key file at {p}")
+        print(f"sshtac: removed {p}" if apikey.remove() else f"sshtac: there was no key file at {p}")
         return 0
     if args.example:
         print(config.EXAMPLE.read_text(), end="")
         return 0
     if args.init:
         if path.exists():
-            print(f"tac: {path} already exists; not overwriting it", file=sys.stderr)
+            print(f"sshtac: {path} already exists; not overwriting it", file=sys.stderr)
             return 1
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(config.EXAMPLE.read_text())
-        print(f"tac: wrote {path}; edit it, then restart tac")
+        print(f"sshtac: wrote {path}; edit it, then restart sshtac")
         return 0
     print(f"config file: {path} ({'found' if path.exists() else 'not found, using built-in defaults'})")
     try:
         cfg = config.load()
     except config.ConfigError as e:
-        print(f"tac: config error: {e}", file=sys.stderr)
+        print(f"sshtac: config error: {e}", file=sys.stderr)
         return 1
     k = cfg.keys
     print(f"model: {cfg.model}   effort: {cfg.ai['effort']}   tmux server: -L {cfg.tmux_socket}")
@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         print(__doc__.strip())
         return 0
     if argv[:1] == ["--version"]:
-        print(f"tac {__version__}")
+        print(f"sshtac {__version__}")
         return 0
 
     first = argv[0] if argv else None
@@ -197,24 +197,24 @@ def main(argv: list[str] | None = None) -> int:
         first = argv[2]
     if first not in INTERNAL:
         ssh_args = argv[1:] if argv[:1] == ["--"] else argv
-        from tac.config import ConfigError, load
-        from tac.launcher import launch
-        from tac.runtime import RuntimeDirError
-        from tac.tmuxctl import TmuxError
+        from sshtac.config import ConfigError, load
+        from sshtac.launcher import launch
+        from sshtac.runtime import RuntimeDirError
+        from sshtac.tmuxctl import TmuxError
 
         try:
             launch(ssh_args, load(), prompt_for_key=True)
         except (ConfigError, RuntimeDirError, TmuxError) as e:
-            print(f"tac: {e}", file=sys.stderr)
+            print(f"sshtac: {e}", file=sys.stderr)
             return 1
         except KeyboardInterrupt:
             print("\ntac: interrupted; nothing was left running", file=sys.stderr)
             return 130
         except Exception as e:
-            if os.environ.get("TAC_DEBUG") == "1":
+            if os.environ.get("SSHTAC_DEBUG") == "1":
                 raise
-            print(f"tac: unexpected error: {type(e).__name__}: {e}", file=sys.stderr)
-            print("tac: run with TAC_DEBUG=1 for details", file=sys.stderr)
+            print(f"sshtac: unexpected error: {type(e).__name__}: {e}", file=sys.stderr)
+            print("sshtac: run with SSHTAC_DEBUG=1 for details", file=sys.stderr)
             return 1
         return 0
 
@@ -222,20 +222,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "config":
         return _config_cmd(args)
     if args.cmd == "_ssh":
-        from tac.launcher import exec_ssh
+        from sshtac.launcher import exec_ssh
 
         return exec_ssh()
     if args.cmd == "_shell":
-        from tac.launcher import exec_shell
+        from sshtac.launcher import exec_shell
 
         return exec_shell()
     cfg = _load_config(args.socket)
     if args.cmd == "core":
-        from tac.core import main as core_main
+        from sshtac.core import main as core_main
 
         return core_main(args.session, cfg)
     if args.cmd == "exec":
-        from tac.executor import main as exec_main
+        from sshtac.executor import main as exec_main
 
         return exec_main(args.session, cfg)
     if args.cmd == "stop":

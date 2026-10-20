@@ -1,7 +1,7 @@
-"""The API key file: ~/.config/tac/api_key, next to config.toml.
+"""The API key file: ~/.config/sshtac/api_key, next to config.toml.
 
 Kept out of config.toml on purpose, so the config can be shared or committed
-without leaking the key. Like ssh with private keys, tac refuses a key file
+without leaking the key. Like ssh with private keys, sshtac refuses a key file
 that other users can read.
 
 The file holds just the key (a `ANTHROPIC_API_KEY=` prefix, quotes and
@@ -14,7 +14,7 @@ import os
 import stat
 from pathlib import Path
 
-from tac import config
+from sshtac import config
 
 
 class KeyFileError(Exception):

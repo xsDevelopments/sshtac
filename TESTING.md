@@ -1,4 +1,4 @@
-# tac manual test plan
+# sshtac manual test plan
 
 Run this against a **throwaway Docker container** with sshd (section A), or your own machine over
 `localhost` (section B). **Never against a real server.** Several tests deliberately try dangerous
@@ -16,7 +16,7 @@ Each test lists what to **do** and what to **expect**. Record failures with the 
 ### A. Throwaway SSH container (recommended)
 
 ```bash
-mkdir -p /tmp/tac-lab && cd /tmp/tac-lab
+mkdir -p /tmp/sshtac-lab && cd /tmp/sshtac-lab
 cat > Dockerfile <<'EOF'
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,23 +26,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && usermod -aG sudo tester && echo 'tester ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/tester
 CMD ["/usr/sbin/sshd", "-D", "-e"]
 EOF
-docker build -t tac-lab .
-docker run -d --rm --name tac-lab --cap-add NET_ADMIN -p 127.0.0.1:2222:22 tac-lab
-docker cp ~/dev/github/tmux-ai-companion/tests/fixtures/injected_auth.log tac-lab:/tmp/auth.log
+docker build -t sshtac-lab .
+docker run -d --rm --name sshtac-lab --cap-add NET_ADMIN -p 127.0.0.1:2222:22 sshtac-lab
+docker cp ~/dev/github/tmux-ai-companion/tests/fixtures/injected_auth.log sshtac-lab:/tmp/auth.log
 ```
 
 The password `tester` exists only inside this container, which listens on 127.0.0.1 only.
-Start tac against it from the repo folder:
+Start sshtac against it from the repo folder:
 
 ```bash
-.venv/bin/tac -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1
+sshtac -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1
 ```
 
-Afterwards: `/quit` in the chat pane, then `docker stop tac-lab` (the container deletes itself).
+Afterwards: `/quit` in the chat pane, then `docker stop sshtac-lab` (the container deletes itself).
 
 ### B. Local machine
 
-Run `.venv/bin/tac` with no arguments for a local shell, or `.venv/bin/tac localhost` if you run
+Run `sshtac` with no arguments for a local shell, or `sshtac localhost` if you run
 sshd locally. Skip or adapt tests that need root (T12, T13). Use scratch files under `/tmp` only.
 
 ### Deterministic mode (no API calls)
@@ -50,7 +50,7 @@ sshd locally. Skip or adapt tests that need root (T12, T13). Use scratch files u
 Tests marked **[fake]** use the scripted fake model, so the result doesn't depend on the AI:
 
 ```bash
-TAC_TEST_FAKE_MODEL=1 .venv/bin/tac -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1
+SSHTAC_TEST_FAKE_MODEL=1 sshtac -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1
 ```
 
 In this mode, whatever you send comes back as `FAKE MODEL received: …`. A line
@@ -62,30 +62,30 @@ and press **F6**. Use a fresh session (`/quit` first) when switching between fak
 
 ### Start, layout, exit
 
-**T1 Layout and labels.** Start tac.
+**T1 Layout and labels.** Start sshtac.
 Expect: three panes labelled SHELL, AI CHAT — type here, EXECUTE. The status line shows key hints
 ending in "exit: /quit in chat · detach: Ctrl+B d". The chat names the model, audit log and config.
-`ls -l ~/.local/state/tac/` shows the newest log with mode `-rw-------`.
+`ls -l ~/.local/state/sshtac/` shows the newest log with mode `-rw-------`.
 
-**T2 API key prompt.** Move any existing key file aside (`mv ~/.config/tac/api_key /tmp/k`). In a
-new terminal with no `ANTHROPIC_API_KEY`, start tac.
+**T2 API key prompt.** Move any existing key file aside (`mv ~/.config/sshtac/api_key /tmp/k`). In a
+new terminal with no `ANTHROPIC_API_KEY`, start sshtac.
 Expect: "Paste your API key (hidden)…". Typing shows nothing. Then "Save it to …/api_key …? [y/N]":
 answer `n`. In the shell pane, `env | grep -c ANTHROPIC` prints `0`. Pressing Enter at the key
-prompt instead starts tac with the chat saying AI is disabled.
+prompt instead starts sshtac with the chat saying AI is disabled.
 
-**T2b Key file.** Run `.venv/bin/tac config --set-key` and paste the key. `ls -l ~/.config/tac/api_key`
-shows `-rw-------`, and `.venv/bin/tac config` says "API key: … (private, owner-only)" without
+**T2b Key file.** Run `sshtac config --set-key` and paste the key. `ls -l ~/.config/sshtac/api_key`
+shows `-rw-------`, and `sshtac config` says "API key: … (private, owner-only)" without
 printing the key. A new terminal with no environment key now starts without asking. Then
-`chmod 644 ~/.config/tac/api_key` and start tac: "not using the API key file: … chmod 600 …" and the
+`chmod 644 ~/.config/sshtac/api_key` and start sshtac: "not using the API key file: … chmod 600 …" and the
 prompt appears. Restore with `chmod 600`.
 
-**T3 Detach and reattach.** Type `/detach`. Then run `tac …` with the same arguments again.
+**T3 Detach and reattach.** Type `/detach`. Then run `sshtac …` with the same arguments again.
 Expect: back in the same session with the SSH connection still up, and "attaching to existing
 session".
 
 **T4 Quit.** Type `/quit` and answer `n`, then `/quit` and `y`.
 Expect: `n` keeps everything running. `y` returns you to your terminal;
-`ls $XDG_RUNTIME_DIR/tac/tac/` no longer lists the session's `.sock`; the audit log ends with
+`ls $XDG_RUNTIME_DIR/sshtac/sshtac/` no longer lists the session's `.sock`; the audit log ends with
 `"event": "session_end"`.
 
 ### Keys, mouse, focus
@@ -111,7 +111,7 @@ printf 'password=hunter2\nAKIAIOSFODNN7EXAMPLE\nAuthorization: Bearer abcdef1234
 ```
 Press **F6**, then type `/sent`.
 Expect: none of `hunter2`, `AKIA…`, `abcdef…`, `s3cret` appear; `[REDACTED:…]` markers do.
-`grep -c hunter2 ~/.local/state/tac/audit-*.jsonl` prints 0 for this session's file.
+`grep -c hunter2 ~/.local/state/sshtac/audit-*.jsonl` prints 0 for this session's file.
 
 **T10 Truncation.** Run `seq 1 200000`, press **F6**.
 Expect: "truncated N lines / M chars" in the chat; `/sent` shows the start and end of the output
@@ -165,7 +165,7 @@ Expect: `echo a⟨U+00A0⟩b` is shown with the non-ASCII warning (approvable). 
 **T19 Edit.** Get a proposal and press **F9**.
 Expect: your `$EDITOR` opens in the EXECUTE pane with the command. Change it and save: EXECUTE shows
 "(edited by you)" with the new command re-rated (try editing a harmless command into `rm -rf /`: it
-becomes blocked). `ls $XDG_RUNTIME_DIR/tac/tac/` shows no leftover `edit-*` file. Approving logs
+becomes blocked). `ls $XDG_RUNTIME_DIR/sshtac/sshtac/` shows no leftover `edit-*` file. Approving logs
 `[approved after edit]`, and the AI is told what actually ran.
 
 **T20 Placeholders and secrets.** Ask: *"Give me a command that prints the sha256 of a secret I'll
@@ -173,11 +173,11 @@ type, using a placeholder."* (or [fake] `FAKE_PROPOSE printf '%s' {{TOKEN}} | sh
 Expect: focus moves to EXECUTE and asks `TOKEN (…):` without echoing. Then "Prefix a space…?":
 answer `y`. The shell runs ` printf … | sha256sum` with a leading space. Press F6 and check `/sent`:
 the secret appears only as `[REDACTED:session_secret]`.
-`grep -c '<your secret>' ~/.local/state/tac/audit-*.jsonl` prints 0; the `approved` record lists
+`grep -c '<your secret>' ~/.local/state/sshtac/audit-*.jsonl` prints 0; the `approved` record lists
 `"placeholders": ["TOKEN"]`.
 
 **T21 Shell exited.** Type `exit` in the shell pane (ends SSH). Get a proposal and press F7.
-Expect: the pane stays, showing "[tac] shell exited …". F7 says "the shell pane has exited", and
+Expect: the pane stays, showing "[sshtac] shell exited …". F7 says "the shell pane has exited", and
 nothing is pasted anywhere else.
 
 **T22 Copy mode guard.** Scroll the shell pane (so it is in copy mode), then press F7 on a pending
@@ -186,22 +186,22 @@ Expect: "the shell pane is in copy mode (press q there first)".
 
 ### Failures
 
-**T23 Bad API key.** `/quit`, then start with `ANTHROPIC_API_KEY=sk-ant-wrong .venv/bin/tac`, ask
+**T23 Bad API key.** `/quit`, then start with `ANTHROPIC_API_KEY=sk-ant-wrong sshtac`, ask
 anything.
-Expect: "authentication failed…" in the chat; tac keeps running.
+Expect: "authentication failed…" in the chat; sshtac keeps running.
 
-**T24 No network.** Start with `ANTHROPIC_BASE_URL=http://127.0.0.1:9 .venv/bin/tac`, ask anything.
-Expect: after the SDK's retries, "could not reach the API"; tac keeps running.
+**T24 No network.** Start with `ANTHROPIC_BASE_URL=http://127.0.0.1:9 sshtac`, ask anything.
+Expect: after the SDK's retries, "could not reach the API"; sshtac keeps running.
 
-**T25 Interrupted start.** Run `.venv/bin/tac` and press Ctrl+C at the API key prompt.
-Expect: "tac: interrupted; nothing was left running", and `tmux -L tac ls` shows no new session.
+**T25 Interrupted start.** Run `sshtac` and press Ctrl+C at the API key prompt.
+Expect: "sshtac: interrupted; nothing was left running", and `tmux -L sshtac ls` shows no new session.
 
 ### Configuration
 
-**T26 Remap keys.** `.venv/bin/tac config --init`, set `approve = "M-y"` in
-`~/.config/tac/config.toml`, run `.venv/bin/tac config` (expect "config OK"), restart tac.
+**T26 Remap keys.** `sshtac config --init`, set `approve = "M-y"` in
+`~/.config/sshtac/config.toml`, run `sshtac config` (expect "config OK"), restart sshtac.
 Expect: Alt+Y approves; F7 does nothing; the status line shows `M-y approve`. Setting `approve = "y"`
-makes `tac config` reject it with an explanation.
+makes `sshtac config` reject it with an explanation.
 
 **T27 Custom blocked pattern.** Add `blocked_patterns = ['\bshutdown\b']` under `[policy]`, restart,
 [fake] propose `shutdown -h now`.
@@ -211,7 +211,7 @@ Expect: blocked, with "matches configured blocked pattern".
 
 **T28 Timeline.** After a session:
 ```bash
-python3 -c "import json,sys; [print(r['ts'], r['event'], r.get('command') or r.get('source') or '') for r in map(json.loads, open(sys.argv[1]))]" ~/.local/state/tac/audit-<file>.jsonl
+python3 -c "import json,sys; [print(r['ts'], r['event'], r.get('command') or r.get('source') or '') for r in map(json.loads, open(sys.argv[1]))]" ~/.local/state/sshtac/audit-<file>.jsonl
 ```
 Expect: a readable sequence: session_start, send, model_reply, classification, approved/rejected,
 edit, block, session_end. No secret values anywhere.
@@ -219,6 +219,6 @@ edit, block, session_end. No secret values anywhere.
 ## Cleanup
 
 ```bash
-docker stop tac-lab        # container A removes itself
-rm -rf /tmp/tac-lab /tmp/victim
+docker stop sshtac-lab        # container A removes itself
+rm -rf /tmp/sshtac-lab /tmp/victim
 ```

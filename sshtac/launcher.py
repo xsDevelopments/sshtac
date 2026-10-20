@@ -1,4 +1,4 @@
-"""`tac [ssh args...]`: create (or attach to) the tmux session and its three panes.
+"""`sshtac [ssh args...]`: create (or attach to) the tmux session and its three panes.
 
     ┌──────────────┬─────────┐
     │              │  chat   │   core process
@@ -8,7 +8,7 @@
 
 ssh arguments never pass through tmux's argv: tmux treats an argument ending in
 ';' as a command separator and silently rewrites it. Instead they travel as JSON
-in TAC_SSH_ARGV to `tac _ssh`, which execs ssh directly.
+in SSHTAC_SSH_ARGV to `sshtac _ssh`, which execs ssh directly.
 """
 
 from __future__ import annotations
@@ -21,12 +21,12 @@ import shutil
 import sys
 from pathlib import Path
 
-from tac import runtime
-from tac.config import Config
-from tac.tmuxctl import MIN_VERSION, Tmux, TmuxError
+from sshtac import runtime
+from sshtac.config import Config
+from sshtac.tmuxctl import MIN_VERSION, Tmux, TmuxError
 
 # Credentials the core needs. tmux copies these from the launching client's
-# environment into the session (update-environment), so a tac server started
+# environment into the session (update-environment), so a sshtac server started
 # earlier without them still gets them; the shell pane's shim removes them.
 CREDENTIAL_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_BASE_URL")
 
@@ -58,20 +58,20 @@ def ssh_destination(args: list[str]) -> str | None:
 def session_name(ssh_args: list[str]) -> str:
     dest = ssh_destination(ssh_args) if ssh_args else None
     if not dest:
-        return "tac-local"
+        return "sshtac-local"
     host = dest.rsplit("@", 1)[-1]
     host = re.sub(r"^ssh://", "", host)
     host = re.sub(r"[^A-Za-z0-9_-]+", "-", host).strip("-")[:40]
-    return f"tac-{host or 'ssh'}"
+    return f"sshtac-{host or 'ssh'}"
 
 
 def tac_argv() -> list[str]:
-    """argv that runs this tac from inside tmux (panes and key bindings)."""
-    return [sys.executable, "-m", "tac"]
+    """argv that runs this sshtac from inside tmux (panes and key bindings)."""
+    return [sys.executable, "-m", "sshtac"]
 
 
 def tac_env() -> dict[str, str]:
-    """Env needed so `python -m tac` finds this package when it isn't installed."""
+    """Env needed so `python -m sshtac` finds this package when it isn't installed."""
     pkg_parent = str(Path(__file__).resolve().parent.parent)
     if "site-packages" in pkg_parent or "dist-packages" in pkg_parent:
         return {}
@@ -99,16 +99,16 @@ def status_hints(cfg: Config) -> str:
 
 def configure_server(tmux: Tmux, cfg: Config) -> None:
     """Look and mouse behaviour. These are global options, which is safe
-    because tac runs its own tmux server; your normal tmux is untouched."""
+    because sshtac runs its own tmux server; your normal tmux is untouched."""
     for opt, val in (
         # Click to focus a pane, drag to select inside one pane, wheel to scroll.
         ("mouse", "on" if cfg.raw["tmux"]["mouse"] else "off"),
-        # Label panes by role. @tac_role is our own option: a remote program can
+        # Label panes by role. @sshtac_role is our own option: a remote program can
         # change a pane's title with an escape sequence, but not this.
         ("pane-border-status", "top"),
-        ("pane-border-format", " #{?@tac_role,#{@tac_role},} "),
+        ("pane-border-format", " #{?@sshtac_role,#{@sshtac_role},} "),
         ("pane-active-border-style", "fg=cyan,bold"),
-        ("status-left", " tac #{session_name} "),
+        ("status-left", " sshtac #{session_name} "),
         ("status-left-length", "40"),
         ("status-right", status_hints(cfg).replace("#", "##")),
         ("status-right-length", "200"),
@@ -121,7 +121,7 @@ def configure_server(tmux: Tmux, cfg: Config) -> None:
 
 
 def install_bindings(tmux: Tmux, cfg: Config) -> None:
-    """Key bindings live on the dedicated tac tmux server only."""
+    """Key bindings live on the dedicated sshtac tmux server only."""
     base = tac_argv() + ["--socket", cfg.tmux_socket]
     env = tac_env()
     k = cfg.keys
@@ -132,7 +132,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
 
     # Remove what an earlier launch bound, so a key you've since changed in
     # the config stops doing anything.
-    previous = tmux.run("show-options", "-gqv", "@tac_bound_keys", check=False).split()
+    previous = tmux.run("show-options", "-gqv", "@sshtac_bound_keys", check=False).split()
     for entry in previous:
         table, _, key = entry.partition(":")
         if table and key:
@@ -148,7 +148,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         tmux.run("bind-key", "-T", "root", key, "run-shell", "-b", client(*sub))
         bound.append(f"root:{key}")
     # pipe-and-cancel (not copy-pipe): sending adds nothing to tmux's paste
-    # buffers; the selection goes only to tac's stdin.
+    # buffers; the selection goes only to sshtac's stdin.
     for table in ("copy-mode", "copy-mode-vi"):
         tmux.run(
             "bind-key", "-T", table, k["send_selection"],
@@ -170,16 +170,16 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
     go = lambda opt: f"run-shell '{tm} -L {sock} select-pane -t #{{{opt}}}'"
     tmux.run(
         "bind-key", "-T", "root", k["focus_toggle"], "if-shell", "-F",
-        "#{==:#{pane_id},#{@tac_shell_pane}}", go("@tac_chat_pane"), go("@tac_shell_pane"),
+        "#{==:#{pane_id},#{@sshtac_shell_pane}}", go("@sshtac_chat_pane"), go("@sshtac_shell_pane"),
     )
     bound.append(f"root:{k['focus_toggle']}")
-    tmux.run("set-option", "-g", "@tac_bound_keys", " ".join(bound))
+    tmux.run("set-option", "-g", "@sshtac_bound_keys", " ".join(bound))
 
 
 def _check_tmux(tmux: Tmux) -> None:
     v = tmux.version()
     if v < MIN_VERSION:
-        raise TmuxError(f"tmux {v[0]}.{v[1]} is too old; tac needs {MIN_VERSION[0]}.{MIN_VERSION[1]}+")
+        raise TmuxError(f"tmux {v[0]}.{v[1]} is too old; sshtac needs {MIN_VERSION[0]}.{MIN_VERSION[1]}+")
 
 
 def create_session(
@@ -188,31 +188,31 @@ def create_session(
     cols, rows = shutil.get_terminal_size((200, 50))
     env = tac_env()
     env_args = [a for k, v in env.items() for a in ("-e", f"{k}={v}")]
-    tac = tac_argv() + ["--socket", cfg.tmux_socket]
+    sshtac = tac_argv() + ["--socket", cfg.tmux_socket]
 
     new = ["new-session", "-d", "-s", name, "-x", str(cols), "-y", str(rows), "-P", "-F", "#{pane_id}"]
     if ssh_args:
-        new += env_args + ["-e", "TAC_SSH_ARGV=" + json.dumps(ssh_args)] + tac + ["_ssh"]
+        new += env_args + ["-e", "SSHTAC_SSH_ARGV=" + json.dumps(ssh_args)] + sshtac + ["_ssh"]
     elif shell_argv:
         new += shell_argv  # tests only: fixed argv, never user input
     else:
-        new += env_args + tac + ["_shell"]
+        new += env_args + sshtac + ["_shell"]
     shell = tmux.run(*new).strip()
 
     chat = tmux.run(
         "split-window", "-h", "-d", "-t", shell, "-l", cfg.right_width, "-P", "-F", "#{pane_id}",
-        *env_args, *tac, "core", "--session", name,
+        *env_args, *sshtac, "core", "--session", name,
     ).strip()
     execp = tmux.run(
         "split-window", "-v", "-d", "-t", chat, "-l", cfg.exec_height, "-P", "-F", "#{pane_id}",
-        *env_args, *tac, "exec", "--session", name,
+        *env_args, *sshtac, "exec", "--session", name,
     ).strip()
 
-    tmux.set_option(name, "@tac_session", "1")
-    tmux.set_option(name, "@tac_ssh_args", json.dumps(ssh_args))
-    tmux.set_option(name, "@tac_shell_pane", shell)
-    tmux.set_option(name, "@tac_chat_pane", chat)
-    tmux.set_option(name, "@tac_exec_pane", execp)
+    tmux.set_option(name, "@sshtac_session", "1")
+    tmux.set_option(name, "@sshtac_ssh_args", json.dumps(ssh_args))
+    tmux.set_option(name, "@sshtac_shell_pane", shell)
+    tmux.set_option(name, "@sshtac_chat_pane", chat)
+    tmux.set_option(name, "@sshtac_exec_pane", execp)
     decorate_session(tmux, name)
     tmux.select_pane(shell)
 
@@ -221,14 +221,14 @@ def decorate_session(tmux: Tmux, name: str) -> list[str]:
     """Per-pane settings, safe to re-apply on every launch. Returns problems
     found (e.g. a pane that no longer exists) instead of raising."""
     problems = []
-    panes = {role: tmux.get_option(name, f"@tac_{role}_pane") for role in ("shell", "chat", "exec")}
+    panes = {role: tmux.get_option(name, f"@sshtac_{role}_pane") for role in ("shell", "chat", "exec")}
     labels = {"shell": "SHELL", "chat": "AI CHAT — type here", "exec": "EXECUTE"}
     for role, pane in panes.items():
         if not pane:
-            problems.append(f"@tac_{role}_pane is not set")
+            problems.append(f"@sshtac_{role}_pane is not set")
             continue
         try:
-            tmux.set_pane_option(pane, "@tac_role", labels[role])
+            tmux.set_pane_option(pane, "@sshtac_role", labels[role])
         except TmuxError as e:
             problems.append(f"{role} pane {pane}: {e}")
     shell = panes["shell"]
@@ -239,7 +239,7 @@ def decorate_session(tmux: Tmux, name: str) -> list[str]:
         tmux.set_pane_option(
             shell,
             "remain-on-exit-format",
-            "[tac] shell exited (#{pane_dead_status}). Reconnect: prefix + : respawn-pane   End: tac stop",
+            "[sshtac] shell exited (#{pane_dead_status}). Reconnect: prefix + : respawn-pane   End: sshtac stop",
             check=False,
         )
     return problems
@@ -257,12 +257,12 @@ def launch(
     runtime.server_dir(cfg.tmux_socket)
     name = session_name(ssh_args)
     if tmux.has_session(name):
-        print(f"tac: attaching to existing session {name}", file=sys.stderr)
+        print(f"sshtac: attaching to existing session {name}", file=sys.stderr)
         problems = decorate_session(tmux, name)
         if problems:
             raise TmuxError(
                 f"session {name} looks broken ({'; '.join(problems)}). "
-                f"End it with `tac stop --session {name}` and start again."
+                f"End it with `sshtac stop --session {name}` and start again."
             )
     else:
         if prompt_for_key:
@@ -288,13 +288,13 @@ def launch(
             if tmux.has_session("_tac_boot"):
                 tmux.kill_session("_tac_boot")
     # Server-wide look and key bindings: re-applied on every launch, so a
-    # server whose setup was interrupted is repaired by running tac again.
+    # server whose setup was interrupted is repaired by running sshtac again.
     configure_server(tmux, cfg)
     install_bindings(tmux, cfg)
     if attach:
         env = dict(os.environ)
         if env.pop("TMUX", None):
-            print("tac: starting inside tmux; nesting a separate tac tmux server", file=sys.stderr)
+            print("sshtac: starting inside tmux; nesting a separate sshtac tmux server", file=sys.stderr)
         os.execvpe(tmux.binary, tmux.argv("attach-session", "-t", f"={name}"), env)
     return name
 
@@ -312,20 +312,20 @@ def has_credentials(env: dict[str, str] | None = None) -> bool:
 
 def ask_for_key(getpass_fn=None, input_fn=None) -> None:
     """Find an API key for a new session, in order: this terminal's environment,
-    tac's key file (~/.config/tac/api_key), an `ant auth login` profile, or a
+    sshtac's key file (~/.config/sshtac/api_key), an `ant auth login` profile, or a
     hidden prompt (with an offer to save it to the key file).
 
     The key ends up in this process's environment only; tmux copies it to the
     new session (update-environment), and the shell and execute panes remove it
     again. It is never put on a command line."""
-    from tac import apikey
+    from sshtac import apikey
 
-    if os.environ.get("TAC_TEST_FAKE_MODEL") == "1" or has_env_credentials():
+    if os.environ.get("SSHTAC_TEST_FAKE_MODEL") == "1" or has_env_credentials():
         return
     try:
         key = apikey.read()
     except apikey.KeyFileError as e:
-        print(f"tac: not using the API key file: {e}", file=sys.stderr)
+        print(f"sshtac: not using the API key file: {e}", file=sys.stderr)
         key = None
     if key:
         os.environ["ANTHROPIC_API_KEY"] = key
@@ -336,21 +336,21 @@ def ask_for_key(getpass_fn=None, input_fn=None) -> None:
 
     getpass_fn = getpass_fn or getpass.getpass
     input_fn = input_fn or input
-    print("tac: no Anthropic API key found.", file=sys.stderr)
+    print("sshtac: no Anthropic API key found.", file=sys.stderr)
     key = getpass_fn("Paste your API key (hidden), or press Enter to run without AI: ").strip()
     if not key:
-        print("tac: starting without AI (chat will say it is disabled)", file=sys.stderr)
+        print("sshtac: starting without AI (chat will say it is disabled)", file=sys.stderr)
         return
     if not key.startswith("sk-ant-"):
-        print("tac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
+        print("sshtac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
     os.environ["ANTHROPIC_API_KEY"] = key
     where = apikey.path()
-    if input_fn(f"Save it to {where} (readable only by you) so tac won't ask again? [y/N] ").strip().lower() in ("y", "yes"):
+    if input_fn(f"Save it to {where} (readable only by you) so sshtac won't ask again? [y/N] ").strip().lower() in ("y", "yes"):
         try:
             apikey.write(key)
-            print(f"tac: saved. Remove it any time with: tac config --remove-key", file=sys.stderr)
+            print(f"sshtac: saved. Remove it any time with: sshtac config --remove-key", file=sys.stderr)
         except OSError as e:
-            print(f"tac: could not save the key: {e}", file=sys.stderr)
+            print(f"sshtac: could not save the key: {e}", file=sys.stderr)
 
 
 def _pass_credentials(tmux: Tmux) -> None:
@@ -361,14 +361,14 @@ def _pass_credentials(tmux: Tmux) -> None:
 
 
 def _scrub_env() -> None:
-    """The shell pane must not inherit tac's plumbing or the API credentials:
+    """The shell pane must not inherit sshtac's plumbing or the API credentials:
     anything in its environment can end up in captured output."""
-    for var in (*CREDENTIAL_VARS, "PYTHONPATH", "TAC_SSH_ARGV"):
+    for var in (*CREDENTIAL_VARS, "PYTHONPATH", "SSHTAC_SSH_ARGV"):
         os.environ.pop(var, None)
 
 
 def exec_shell() -> int:
-    """`tac _shell`: the shell pane's process for a local session. Runs your
+    """`sshtac _shell`: the shell pane's process for a local session. Runs your
     login shell, as tmux would, minus the scrubbed variables."""
     _scrub_env()
     shell = os.environ.get("SHELL") or "/bin/sh"
@@ -376,14 +376,14 @@ def exec_shell() -> int:
 
 
 def exec_ssh() -> int:
-    """`tac _ssh`: the shell pane's process when ssh args were given."""
-    raw = os.environ.pop("TAC_SSH_ARGV", None)
+    """`sshtac _ssh`: the shell pane's process when ssh args were given."""
+    raw = os.environ.pop("SSHTAC_SSH_ARGV", None)
     if raw is None:
-        print("tac _ssh: TAC_SSH_ARGV not set", file=sys.stderr)
+        print("sshtac _ssh: SSHTAC_SSH_ARGV not set", file=sys.stderr)
         return 2
     args = json.loads(raw)
     if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
-        print("tac _ssh: TAC_SSH_ARGV must be a JSON list of strings", file=sys.stderr)
+        print("sshtac _ssh: SSHTAC_SSH_ARGV must be a JSON list of strings", file=sys.stderr)
         return 2
     _scrub_env()
     os.execvp("ssh", ["ssh", *args])

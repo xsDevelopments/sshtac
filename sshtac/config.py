@@ -1,6 +1,6 @@
-"""Configuration: built-in defaults, overlaid by ~/.config/tac/config.toml, then env.
+"""Configuration: built-in defaults, overlaid by ~/.config/sshtac/config.toml, then env.
 
-Env overrides: TAC_CONFIG (path to the TOML file), TAC_MODEL, TAC_TMUX_SOCKET.
+Env overrides: SSHTAC_CONFIG (path to the TOML file), SSHTAC_MODEL, SSHTAC_TMUX_SOCKET.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tac.pipeline import EntropySettings, Pipeline, compile_patterns
+from sshtac.pipeline import EntropySettings, Pipeline, compile_patterns
 
 DEFAULTS: dict[str, Any] = {
     "model": "claude-sonnet-5-5",
@@ -32,9 +32,9 @@ DEFAULTS: dict[str, Any] = {
         "show_reasoning": "auto",
     },
     "tmux": {
-        # tac runs its own tmux server (`tmux -L tac`) so its key bindings and
+        # sshtac runs its own tmux server (`tmux -L sshtac`) so its key bindings and
         # options never touch your normal tmux sessions.
-        "socket_name": "tac",
+        "socket_name": "sshtac",
         "history_limit": 50_000,
         "mouse": True,  # click to focus, drag to select within a pane, wheel to scroll
         "right_width": "45%",
@@ -76,10 +76,10 @@ _SOCKET_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 def config_path() -> Path:
-    if p := os.environ.get("TAC_CONFIG"):
+    if p := os.environ.get("SSHTAC_CONFIG"):
         return Path(p)
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "tac" / "config.toml"
+    return Path(base) / "sshtac" / "config.toml"
 
 
 def _merge(base: dict[str, Any], over: dict[str, Any], path: str = "") -> None:
@@ -143,9 +143,9 @@ def load(path: Path | None = None) -> Config:
                 _merge(data, tomllib.load(f))
             except tomllib.TOMLDecodeError as e:
                 raise ConfigError(f"{path}: {e}") from None
-    if m := os.environ.get("TAC_MODEL"):
+    if m := os.environ.get("SSHTAC_MODEL"):
         data["model"] = m
-    if s := os.environ.get("TAC_TMUX_SOCKET"):
+    if s := os.environ.get("SSHTAC_TMUX_SOCKET"):
         data["tmux"]["socket_name"] = s
     cfg = from_dict(data)
     return dataclasses.replace(cfg, source=str(path)) if path.exists() else cfg

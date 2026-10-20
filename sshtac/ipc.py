@@ -114,7 +114,7 @@ class Server:
         self.path = path
         if path.exists() or path.is_symlink():
             if _alive(path):
-                raise IPCError(f"another tac core is already listening on {path}")
+                raise IPCError(f"another sshtac core is already listening on {path}")
             path.unlink()
         old = os.umask(0o177)
         try:
@@ -155,7 +155,7 @@ def request(path: Path, msg: dict[str, Any], timeout: float = 5.0) -> dict[str, 
         try:
             s.connect(str(path))
         except OSError as e:
-            raise IPCError(f"tac core not reachable at {path}: {e.strerror or e}") from None
+            raise IPCError(f"sshtac core not reachable at {path}: {e.strerror or e}") from None
         s.sendall(encode(msg))
         with s.makefile("rb") as f:
             line = f.readline(MAX_MESSAGE + 1)
@@ -174,7 +174,7 @@ class Subscription:
             self.sock.connect(str(path))
         except OSError as e:
             self.sock.close()
-            raise IPCError(f"tac core not reachable at {path}: {e.strerror or e}") from None
+            raise IPCError(f"sshtac core not reachable at {path}: {e.strerror or e}") from None
         self.rfile = self.sock.makefile("rb")
         self.sock.sendall(encode(hello))
         reply = self._read()

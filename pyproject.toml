@@ -3,17 +3,17 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tac"
+name = "sshtac"
 version = "0.1.0.dev0"
 description = "tmux AI companion for human-in-the-loop SSH work"
 requires-python = ">=3.11"
 dependencies = ["anthropic>=1.15"]
 
 [project.scripts]
-tac = "tac.cli:main"
+sshtac = "sshtac.cli:main"
 
 [tool.setuptools]
-packages = ["tac"]
+packages = ["sshtac"]
 
 [tool.setuptools.package-data]
-tac = ["config.example.toml"]
+sshtac = ["config.example.toml"]

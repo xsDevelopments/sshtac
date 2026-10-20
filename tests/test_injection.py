@@ -5,10 +5,10 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tac import llm
-from tac.executor import assess
-from tac.pipeline import Pipeline
-from tac.policy import Classifier, Risk
+from sshtac import llm
+from sshtac.executor import assess
+from sshtac.pipeline import Pipeline
+from sshtac.policy import Classifier, Risk
 
 FIXTURE = Path(__file__).parent / "fixtures" / "injected_auth.log"
 

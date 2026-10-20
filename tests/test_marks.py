@@ -1,6 +1,6 @@
 import unittest
 
-from tac.marks import Mark, PaneState, capture_range, mark_at
+from sshtac.marks import Mark, PaneState, capture_range, mark_at
 
 
 def st(history_size: int, cursor_y: int, limit: int = 50_000) -> PaneState:

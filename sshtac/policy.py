@@ -661,7 +661,7 @@ class Classifier:
             return
         if name == "ssh":
             v.raise_to(Risk.MUTATING, "ssh runs a command on another host")
-            from tac.launcher import ssh_destination
+            from sshtac.launcher import ssh_destination
 
             dest = ssh_destination(texts)
             if dest is not None and dest in texts:
