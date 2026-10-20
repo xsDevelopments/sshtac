@@ -48,6 +48,7 @@ class ChatUI:
         self._lock = threading.Lock()
         self._in_input = False
         self._at_main_prompt = False
+        self._stale: str | None = None
         try:
             import readline  # noqa: F401  (line editing for input())
 
@@ -61,7 +62,7 @@ class ChatUI:
         text = style(text, colour, self.colour)
         with self._lock:
             if self._in_input and self.colour:
-                buf = self._readline.get_line_buffer() if self._readline else ""
+                buf = self._line_buffer()
                 self.out.write("\r\x1b[2K" + text + "\n" + self.prompt + buf)
             else:
                 self.out.write(text + "\n")
@@ -72,6 +73,7 @@ class ChatUI:
         with self._lock:
             self._in_input = True
             self._at_main_prompt = prompt is None
+            self._stale = self._readline.get_line_buffer() if self._readline else None
         try:
             return input(self.prompt if prompt is None else prompt)
         finally:
@@ -84,4 +86,15 @@ class ChatUI:
         with self._lock:
             if not (self._at_main_prompt and self._readline):
                 return ""
-            return self._readline.get_line_buffer()
+            return self._line_buffer()
+
+    def _line_buffer(self) -> str:
+        """The current input line. macOS's libedit keeps reporting the previous,
+        already-entered line until a key is pressed, so ignore that value until
+        the buffer has changed. Call with the lock held."""
+        buf = self._readline.get_line_buffer() if self._readline else ""
+        if self._stale is not None:
+            if buf == self._stale:
+                return ""
+            self._stale = None
+        return buf
