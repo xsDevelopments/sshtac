@@ -3,6 +3,11 @@
     tac [ssh args...]          start or attach (no args: a local shell)
     tac -- <ssh args...>       same, when the host is named like a subcommand
     tac stop [--session S]     end a tac session
+    tac config                 show which config file is used, and check it
+    tac config --init          create ~/.config/tac/config.toml from the example
+    tac config --example       print the documented example config
+    tac config --set-key       save your API key to ~/.config/tac/api_key (private file)
+    tac config --remove-key    delete that file
 
 Internal (used by panes and key bindings):
     tac core|exec --session S
@@ -20,7 +25,7 @@ import sys
 from tac import __version__
 
 CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark"}
-INTERNAL = {"core", "exec", "stop", "_ssh", "_shell"} | CLIENT_CMDS
+INTERNAL = {"core", "exec", "stop", "config", "_ssh", "_shell"} | CLIENT_CMDS
 MAX_SELECTION_READ = 2 * 1024 * 1024
 
 
@@ -37,6 +42,12 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--session")
     for name in ("approve", "reject", "edit", "mark", "stop"):
         sub.add_parser(name).add_argument("--session")
+    c = sub.add_parser("config")
+    g = c.add_mutually_exclusive_group()
+    g.add_argument("--init", action="store_true")
+    g.add_argument("--example", action="store_true")
+    g.add_argument("--set-key", action="store_true")
+    g.add_argument("--remove-key", action="store_true")
     sub.add_parser("_ssh")
     sub.add_parser("_shell")
     return p
@@ -109,6 +120,69 @@ def _stop(args, cfg) -> int:
     return 0
 
 
+def _key_status() -> str:
+    from tac import apikey
+    from tac.launcher import has_env_credentials
+
+    if has_env_credentials():
+        return "API key: from this terminal's environment (takes priority over the key file)"
+    p = apikey.path()
+    try:
+        key = apikey.read()
+    except apikey.KeyFileError as e:
+        return f"API key: PROBLEM: {e}"
+    if key:
+        return f"API key: {p} (private, owner-only)"
+    return f"API key: not set; tac will ask (save one with: tac config --set-key)"
+
+
+def _config_cmd(args) -> int:
+    from tac import apikey, config
+
+    path = config.config_path()
+    if args.set_key:
+        import getpass
+
+        p = apikey.path()
+        if p.exists() and input(f"Replace the key in {p}? [y/N] ").strip().lower() not in ("y", "yes"):
+            return 1
+        key = getpass.getpass("Paste your API key (hidden): ").strip()
+        if not key:
+            print("tac: nothing saved", file=sys.stderr)
+            return 1
+        if not key.startswith("sk-ant-"):
+            print("tac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
+        print(f"tac: saved to {apikey.write(key)} (readable only by you)")
+        return 0
+    if args.remove_key:
+        p = apikey.path()
+        print(f"tac: removed {p}" if apikey.remove() else f"tac: there was no key file at {p}")
+        return 0
+    if args.example:
+        print(config.EXAMPLE.read_text(), end="")
+        return 0
+    if args.init:
+        if path.exists():
+            print(f"tac: {path} already exists; not overwriting it", file=sys.stderr)
+            return 1
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(config.EXAMPLE.read_text())
+        print(f"tac: wrote {path}; edit it, then restart tac")
+        return 0
+    print(f"config file: {path} ({'found' if path.exists() else 'not found, using built-in defaults'})")
+    try:
+        cfg = config.load()
+    except config.ConfigError as e:
+        print(f"tac: config error: {e}", file=sys.stderr)
+        return 1
+    k = cfg.keys
+    print(f"model: {cfg.model}   effort: {cfg.ai['effort']}   tmux server: -L {cfg.tmux_socket}")
+    print("keys:  " + "  ".join(f"{name}={key}" for name, key in k.items()))
+    print(_key_status())
+    print("config OK")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] in (["-h"], ["--help"]):
@@ -145,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     args = _parser().parse_args(argv)
+    if args.cmd == "config":
+        return _config_cmd(args)
     if args.cmd == "_ssh":
         from tac.launcher import exec_ssh
 

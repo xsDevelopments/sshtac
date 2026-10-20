@@ -139,6 +139,20 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("send", tmux("list-keys", "-T", "root", "F6"))
         self.assertEqual(tmux("show-options", "-pqv", "-t", self.exec_, "@tac_role").strip(), "EXECUTE")
 
+    def test_1e_changed_key_unbinds_the_old_one(self):
+        import copy
+
+        data = copy.deepcopy(self.cfg.raw)
+        data["keys"]["send_results"] = "M-F6"
+        launch([], config.from_dict(data), attach=False)
+        self.assertIn("unknown key", subprocess.run(
+            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "F6"], capture_output=True, text=True).stderr)
+        self.assertIn("send", tmux("list-keys", "-T", "root", "M-F6"))
+        launch([], self.cfg, attach=False)  # back to the defaults for later tests
+        self.assertIn("send", tmux("list-keys", "-T", "root", "F6"))
+        self.assertIn("unknown key", subprocess.run(
+            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "M-F6"], capture_output=True, text=True).stderr)
+
     def test_1d_failed_creation_leaves_nothing_to_attach_to(self):
         from unittest import mock
 

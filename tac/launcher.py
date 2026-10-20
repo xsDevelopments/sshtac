@@ -130,6 +130,15 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         # #{q:session_name} is expanded (and shell-quoted) by tmux at key time.
         return _shell_cmd(base + list(sub), env) + " --session #{q:session_name} >/dev/null 2>&1"
 
+    # Remove what an earlier launch bound, so a key you've since changed in
+    # the config stops doing anything.
+    previous = tmux.run("show-options", "-gqv", "@tac_bound_keys", check=False).split()
+    for entry in previous:
+        table, _, key = entry.partition(":")
+        if table and key:
+            tmux.run("unbind-key", "-T", table, key, check=False)
+    bound: list[str] = []
+
     for key, sub in (
         (k["send_results"], ("send", "--results")),
         (k["approve"], ("approve",)),
@@ -137,6 +146,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         (k["edit"], ("edit",)),
     ):
         tmux.run("bind-key", "-T", "root", key, "run-shell", "-b", client(*sub))
+        bound.append(f"root:{key}")
     # pipe-and-cancel (not copy-pipe): sending adds nothing to tmux's paste
     # buffers; the selection goes only to tac's stdin.
     for table in ("copy-mode", "copy-mode-vi"):
@@ -144,6 +154,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
             "bind-key", "-T", table, k["send_selection"],
             "send-keys", "-X", "pipe-and-cancel", client("send", "--selection"),
         )
+        bound.append(f"{table}:{k['send_selection']}")
         # Releasing a mouse drag copies as usual but keeps the selection
         # highlighted (tmux's default clears it), so it can then be sent.
         tmux.run("bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-no-clear")
@@ -151,6 +162,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         "bind-key", "-T", "root", k["send_selection"], "display-message",
         f"Select text first (drag with the mouse), then press {k['send_selection']}",
     )
+    bound.append(f"root:{k['send_selection']}")
     # Toggle focus between the shell and the chat. select-pane doesn't expand
     # formats in -t, so go through run-shell, which does.
     tm = shlex.quote(tmux.binary).replace("#", "##")
@@ -160,6 +172,8 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         "bind-key", "-T", "root", k["focus_toggle"], "if-shell", "-F",
         "#{==:#{pane_id},#{@tac_shell_pane}}", go("@tac_chat_pane"), go("@tac_shell_pane"),
     )
+    bound.append(f"root:{k['focus_toggle']}")
+    tmux.run("set-option", "-g", "@tac_bound_keys", " ".join(bound))
 
 
 def _check_tmux(tmux: Tmux) -> None:
@@ -285,24 +299,44 @@ def launch(
     return name
 
 
-def has_credentials(env: dict[str, str] | None = None) -> bool:
+def has_env_credentials(env: dict[str, str] | None = None) -> bool:
     env = os.environ if env is None else env
-    if any(env.get(v) for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE")):
+    return any(env.get(v) for v in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"))
+
+
+def has_credentials(env: dict[str, str] | None = None) -> bool:
+    if has_env_credentials(env):
         return True
     return (Path.home() / ".config" / "anthropic").is_dir()  # `ant auth login` profile
 
 
-def ask_for_key(getpass_fn=None) -> None:
-    """If no credentials are set, ask for an API key with a hidden prompt. It
-    goes into this process's environment only; tmux copies it to the new
-    session (update-environment) and the shell pane's shim removes it again.
-    Nothing is written to disk or put on a command line."""
-    if os.environ.get("TAC_TEST_FAKE_MODEL") == "1" or has_credentials() or not sys.stdin.isatty():
+def ask_for_key(getpass_fn=None, input_fn=None) -> None:
+    """Find an API key for a new session, in order: this terminal's environment,
+    tac's key file (~/.config/tac/api_key), an `ant auth login` profile, or a
+    hidden prompt (with an offer to save it to the key file).
+
+    The key ends up in this process's environment only; tmux copies it to the
+    new session (update-environment), and the shell and execute panes remove it
+    again. It is never put on a command line."""
+    from tac import apikey
+
+    if os.environ.get("TAC_TEST_FAKE_MODEL") == "1" or has_env_credentials():
+        return
+    try:
+        key = apikey.read()
+    except apikey.KeyFileError as e:
+        print(f"tac: not using the API key file: {e}", file=sys.stderr)
+        key = None
+    if key:
+        os.environ["ANTHROPIC_API_KEY"] = key
+        return
+    if has_credentials() or not sys.stdin.isatty():
         return
     import getpass
 
     getpass_fn = getpass_fn or getpass.getpass
-    print("tac: no Anthropic API key found in this terminal.", file=sys.stderr)
+    input_fn = input_fn or input
+    print("tac: no Anthropic API key found.", file=sys.stderr)
     key = getpass_fn("Paste your API key (hidden), or press Enter to run without AI: ").strip()
     if not key:
         print("tac: starting without AI (chat will say it is disabled)", file=sys.stderr)
@@ -310,6 +344,13 @@ def ask_for_key(getpass_fn=None) -> None:
     if not key.startswith("sk-ant-"):
         print("tac: warning: that doesn't look like an Anthropic key (they start with sk-ant-)", file=sys.stderr)
     os.environ["ANTHROPIC_API_KEY"] = key
+    where = apikey.path()
+    if input_fn(f"Save it to {where} (readable only by you) so tac won't ask again? [y/N] ").strip().lower() in ("y", "yes"):
+        try:
+            apikey.write(key)
+            print(f"tac: saved. Remove it any time with: tac config --remove-key", file=sys.stderr)
+        except OSError as e:
+            print(f"tac: could not save the key: {e}", file=sys.stderr)
 
 
 def _pass_credentials(tmux: Tmux) -> None:

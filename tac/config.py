@@ -6,6 +6,7 @@ Env overrides: TAC_CONFIG (path to the TOML file), TAC_MODEL, TAC_TMUX_SOCKET.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import os
 import re
 import tomllib
@@ -65,7 +66,12 @@ DEFAULTS: dict[str, Any] = {
     },
 }
 
-_KEY_RE = re.compile(r"[A-Za-z0-9-]{1,32}")
+# F-keys alone, or any key with a modifier. A bare letter/Enter/Space would be
+# captured from the root table while you type (and "y" could approve things).
+_FKEY = r"F(?:[1-9]|1[0-9]|2[0-4])"
+_NAMED = r"Up|Down|Left|Right|Home|End|PageUp|PageDown|PPage|NPage|IC|DC|Insert|Delete|Escape|Enter|Space|Tab|BSpace"
+_KEY_RE = re.compile(rf"(?:(?:[CMS]-)*{_FKEY}|(?:[CMS]-)+(?:{_FKEY}|[A-Za-z0-9]|{_NAMED}))")
+EXAMPLE = Path(__file__).with_name("config.example.toml")
 _SOCKET_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
@@ -107,6 +113,7 @@ class Config:
     max_chars: int
     keys: dict[str, str]
     raw: dict[str, Any]
+    source: str | None = None  # the file loaded, if any
 
     @property
     def ai(self) -> dict[str, Any]:
@@ -140,7 +147,8 @@ def load(path: Path | None = None) -> Config:
         data["model"] = m
     if s := os.environ.get("TAC_TMUX_SOCKET"):
         data["tmux"]["socket_name"] = s
-    return from_dict(data)
+    cfg = from_dict(data)
+    return dataclasses.replace(cfg, source=str(path)) if path.exists() else cfg
 
 
 def from_dict(data: dict[str, Any]) -> Config:
@@ -149,7 +157,13 @@ def from_dict(data: dict[str, Any]) -> Config:
         raise ConfigError("tmux.socket_name must match [A-Za-z0-9_-]+")
     for name, key in data["keys"].items():
         if not _KEY_RE.fullmatch(key):
-            raise ConfigError(f"keys.{name}: not a tmux key name: {key!r}")
+            raise ConfigError(
+                f"keys.{name} = {key!r}: use a function key (F1-F24) or a key with a "
+                f"modifier such as 'M-a', 'C-a' or 'S-F7'"
+            )
+    used = list(data["keys"].values())
+    if dupes := sorted({k for k in used if used.count(k) > 1}):
+        raise ConfigError(f"keys: {', '.join(dupes)} is bound to more than one action")
     for name in ("right_width", "exec_height"):
         if not re.fullmatch(r"\d{1,3}%|\d{1,4}", t[name]):
             raise ConfigError(f"tmux.{name} must be like '45%' or a cell count")

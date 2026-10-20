@@ -90,6 +90,7 @@ class Core:
         self.ui.say(f"tac — session {self.session} — model {self.cfg.model}", "bold", trusted=True)
         self.ui.say(HELP.format(**self.cfg.keys), "dim", trusted=True)
         self.ui.say(f"audit log: {self.audit.path}", "dim", trusted=True)
+        self.ui.say(f"config: {self.cfg.source or 'built-in defaults (no config file)'}", "dim", trusted=True)
         if self.fake_model:
             self.ui.say("TAC_TEST_FAKE_MODEL=1: using the scripted fake model, no API calls", "boldyellow", trusted=True)
             self.audit.event("fake_model")

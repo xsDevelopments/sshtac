@@ -7,13 +7,13 @@ name = "tac"
 version = "0.1.0.dev0"
 description = "tmux AI companion for human-in-the-loop SSH work"
 requires-python = ">=3.11"
-dependencies = ["anthropic"]
-
-[project.optional-dependencies]
-rich = ["rich>=13"]
+dependencies = ["anthropic>=1.15"]
 
 [project.scripts]
 tac = "tac.cli:main"
 
 [tool.setuptools]
 packages = ["tac"]
+
+[tool.setuptools.package-data]
+tac = ["config.example.toml"]

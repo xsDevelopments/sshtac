@@ -1,0 +1,78 @@
+# tac configuration — copy to ~/.config/tac/config.toml (or run `tac config --init`).
+# Every setting below is the built-in default; delete what you don't change.
+# Changes apply the next time you start tac (`/quit` in the chat, then `tac`).
+# Unknown keys or wrong types are rejected with a message naming the setting.
+#
+# Your API key does NOT go here: save it with `tac config --set-key`, which writes
+# ~/.config/tac/api_key readable only by you. That way this file can be shared.
+
+# Claude model for the chat. Also settable per run: TAC_MODEL=... tac
+model = "claude-sonnet-5-5"
+
+[ai]
+# How hard the model thinks: "low" | "medium" | "high" | "xhigh" | "max".
+effort = "medium"
+max_tokens = 16000
+# Seconds per API request (the SDK also retries twice on network errors).
+timeout = 120.0
+# If the model declines a request, re-run it on Anthropic's recommended
+# fallback model: "default" or "off".
+fallbacks = "default"
+# When a request reaches this many tokens, trim the oldest terminal output.
+trim_at_tokens = 400000
+# The model's reasoning summary in the chat: "auto" (only when it gives no
+# visible reply), "always", or "never".
+show_reasoning = "auto"
+
+[tmux]
+# tac runs its own tmux server (`tmux -L <socket_name>`), so its keys and
+# settings never touch your normal tmux. Also settable: TAC_TMUX_SOCKET=...
+socket_name = "tac"
+history_limit = 50000
+# Click to focus a pane, drag to select inside one pane, wheel to scroll.
+# Hold Shift (Option in iTerm2) while dragging for your terminal's own selection.
+mouse = true
+# Size of the right-hand column, and of the execute pane within it:
+# a percentage ("45%") or a number of cells ("80").
+right_width = "45%"
+exec_height = "35%"
+
+[capture]
+# Most characters of terminal output sent to the AI in one go; longer
+# output keeps its start and end with a "[… truncated …]" marker.
+max_chars = 20000
+
+[keys]
+# tmux key names. Use function keys (F1–F24) or a key with a modifier:
+# "M-a" (Alt/Option+a), "C-a" (Ctrl+a), "S-F7" (Shift+F7), "M-F7".
+# A plain letter isn't allowed: it would be captured while you type.
+# If a function key does nothing in your terminal, see the README section
+# "When a function key doesn't work".
+send_selection = "F5"   # in a mouse/copy-mode selection: send it to the AI
+send_results = "F6"     # send new shell output since the last command
+approve = "F7"
+reject = "F8"
+edit = "F9"
+focus_toggle = "F4"     # jump between the shell and the AI chat
+
+[policy]
+# Extra case-insensitive regexes, matched against the command's words
+# (quotes removed, operators kept). Example: blocked_patterns = ['\bterraform\s+destroy\b']
+blocked_patterns = []       # can never be approved, only edited or rejected
+destructive_patterns = []   # need "yes" typed to approve
+
+[redaction]
+# Names of built-in patterns to turn off: private_key, conn_string, jwt,
+# aws_access_key, auth_header, bearer_token, basic_auth, password, secret.
+disable = []
+# Your own patterns, replaced with [REDACTED:<name>] before anything is sent:
+# patterns = [{ name = "ticket", regex = 'TCK-\d+' }, { name = "internal", regex = 'corp\.example', flags = "i" }]
+patterns = []
+
+[redaction.entropy]
+# Long random-looking tokens (API keys, session ids) are redacted too.
+enabled = true
+min_length = 32
+threshold = 4.3
+# Long hex strings are usually hashes (sha256sum, git) and are kept by default.
+redact_hex = false
