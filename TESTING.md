@@ -102,8 +102,8 @@ never selects into other panes. F5 with nothing selected shows "Select text firs
 
 **T7b Comment with output.** Type `what does this mean?` in the chat but don't press Enter. In the
 shell run `ls /nonexistent`, then press **F6**.
-Expect: the chat shows `you> what does this mean?` under the "sent results buffer" line, the input
-line is empty again, and the AI answers the question about that output. `/sent` shows the output
+Expect: your line is submitted (it stays on screen, followed by "sent results buffer"), a fresh
+`you>` prompt appears, and the AI answers the question about that output. `/sent` shows the output
 followed by your question. A half-typed `/command` stays in the input line instead.
 
 **T8 Scrolling.** Scroll the chat pane with the wheel, then press **q**.

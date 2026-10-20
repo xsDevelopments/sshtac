@@ -67,6 +67,8 @@ class Core:
         self.conversation: llm.Conversation | None = None
         self._client_factory = client_factory
         self.last_sent = ""
+        # Set while a send waits for the half-typed chat line (see _take_draft).
+        self._draft_slot: dict[str, Any] | None = None
         self.fake_model = os.environ.get("SSHTAC_TEST_FAKE_MODEL") == "1"
         if self.fake_model:
             from sshtac.testing import FakeClient
@@ -157,7 +159,12 @@ class Core:
                 print()
                 self.ui.say("(Ctrl-D ignored — use `sshtac stop` to end the session)", "dim", trusted=True)
                 continue
-            if line:
+            with self._lock:
+                slot, self._draft_slot = self._draft_slot, None
+            if slot is not None:
+                slot["text"] = line  # submitted for a send (F5/F6), not a chat message
+                slot["done"].set()
+            elif line:
                 self._handle_chat(line)
 
     def _handle_chat(self, line: str) -> None:
@@ -234,7 +241,7 @@ class Core:
                 if len(text) > MAX_SELECTION:
                     return {"ok": False, "error": "selection too large"}
             # Taken now, at the key press, not when the worker gets to it.
-            self._work.put({**msg, "draft": self._take_draft()})
+            self._work.put({**msg, "draft_slot": self._take_draft()})
             return {"ok": True}
         if cmd == "mark":
             self._work.put(msg)
@@ -400,26 +407,41 @@ class Core:
         text = self.tmux.capture(pane, rng.start, rng.end)
         return text.rstrip("\n"), "; ".join(notes) or None
 
-    def _take_draft(self) -> str:
-        """Take the half-typed chat line so a send (F5/F6) carries it along,
-        and clear it from the prompt. Slash commands are left alone."""
+    def _take_draft(self) -> dict[str, Any] | None:
+        """If something is typed at `you>` (not a /command), press Enter in the
+        chat pane so the input loop hands that line to this send (F5/F6)
+        instead of sending it as a chat message. Submitting the line works the
+        same in GNU readline, vi mode and macOS's libedit, and leaves it on
+        screen. Returns the slot the input loop fills, or None."""
         text = self.ui.draft()
         if not text.strip() or text.lstrip().startswith("/"):
-            return ""
+            return None
         pane = self.tmux.get_option(self.session, "@sshtac_chat_pane")
         if not pane:
-            return ""
+            return None
+        slot: dict[str, Any] = {"done": threading.Event(), "text": ""}
+        with self._lock:
+            self._draft_slot = slot
         try:
-            # End then C-u empties the line in readline's emacs and vi-insert
-            # modes and in libedit (macOS).
-            self.tmux.run("send-keys", "-t", pane, "End", "C-u")
+            self.tmux.run("send-keys", "-t", pane, "Enter")
         except TmuxError:
-            return ""  # couldn't clear it, so leave it for the user to send
-        return text[:MAX_CHAT]
+            with self._lock:
+                self._draft_slot = None
+            return None
+        return slot
+
+    def _wait_draft(self, slot: dict[str, Any] | None) -> str:
+        if slot is None:
+            return ""
+        slot["done"].wait(2.0)
+        with self._lock:
+            if self._draft_slot is slot:  # never arrived; a late line is plain chat
+                self._draft_slot = None
+        return slot["text"][:MAX_CHAT]
 
     def _do_send(self, msg: dict[str, Any]) -> None:
         source = msg["source"]
-        draft = msg.get("draft") or ""
+        draft = self._wait_draft(msg.get("draft_slot"))
         if source == "results_buffer":
             raw, note = self._capture_results()
         else:
@@ -428,7 +450,7 @@ class Core:
             self.ui.say(f"[{source}] nothing new to send", "yellow", trusted=True)
             if draft:
                 self.ui.say("sending your typed message on its own", "dim", trusted=True)
-                self._do_chat(draft, echo=True)
+                self._do_chat(draft)
             return
         with self._lock:
             secrets = set(self.session_secrets)
@@ -448,9 +470,6 @@ class Core:
         self.ui.say(f"sent {source.replace('_', ' ')}: {prepared.summary()}", "cyan", trusted=True)
         if note:
             self.ui.say(f"note: {note}", "yellow")
-        if chat:
-            # The prompt line was cleared, so show what went with the output.
-            self.ui.say(f"{self.ui.prompt}{chat}")
         # Your words go after the output, outside the <terminal_output> tags.
         self._ask(prepared.text, chat)
 
@@ -465,10 +484,8 @@ class Core:
             self.ui.say("note: redacted part of your message before sending", "yellow", trusted=True)
         return clean
 
-    def _do_chat(self, text: str, echo: bool = False) -> None:
+    def _do_chat(self, text: str) -> None:
         clean = self._clean_chat(text)
-        if echo:
-            self.ui.say(f"{self.ui.prompt}{clean}")
         assert self.audit
         self.audit.event("chat", text=clean)
         self._ask(clean)
