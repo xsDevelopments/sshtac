@@ -208,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sshtac: {e}", file=sys.stderr)
             return 1
         except KeyboardInterrupt:
-            print("\ntac: interrupted; nothing was left running", file=sys.stderr)
+            print("\nsshtac: interrupted; nothing was left running", file=sys.stderr)
             return 130
         except Exception as e:
             if os.environ.get("SSHTAC_DEBUG") == "1":

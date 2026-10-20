@@ -33,6 +33,7 @@ class TestReadOnly(PolicyCase):
             "who; w; last -n 20": R,
             "journalctl -u postfix --since '1 hour ago' --no-pager": R,
             "stat /usr/sbin/sshd && sha256sum /usr/sbin/sshd": R,
+            "shasum -a 256 /usr/sbin/sshd": R,
             "find /tmp -type f -mtime -2 -ls": R,
             "find /var/www -name '*.php' -newer /etc/hostname": R,
             "df -h; du -sh /var/spool/postfix": R,

@@ -272,7 +272,9 @@ class TestEndToEnd(unittest.TestCase):
         secret = "s3cret-Val!$x"
         sshtac("mark", "--session", SESSION)
         time.sleep(0.3)
-        self.propose("printf '%s' {{TOKEN}} | sha256sum")
+        # macOS has no sha256sum on the clean shell's PATH; shasum is everywhere.
+        hasher = "sha256sum" if shutil.which("sha256sum", path="/usr/bin:/bin") else "shasum -a 256"
+        self.propose(f"printf '%s' {{{{TOKEN}}}} | {hasher}")
         sshtac("approve", "--session", SESSION)
         self.assertTrue(wait_for(lambda: "TOKEN (" in self.pane(self.exec_)))
         self.assertTrue(wait_for(lambda: self.active_pane() == self.exec_))

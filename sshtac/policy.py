@@ -422,7 +422,7 @@ READ_ONLY = {
     "dirname", "which", "whereis", "type", "echo", "printf", "test", "[", "true", "false",
     "sleep", "lsmod", "modinfo", "lspci", "lsusb", "lscpu", "lsns", "tree", "column", "jq",
     "diff", "cmp", "comm", "nl", "fold", "rev", "tac", "md5sum", "sha1sum", "sha224sum",
-    "sha256sum", "sha384sum", "sha512sum", "b2sum", "cksum", "sum", "top", "htop", "ausearch",
+    "sha256sum", "sha384sum", "sha512sum", "shasum", "b2sum", "cksum", "sum", "top", "htop", "ausearch",
     "aureport", "debsums", "base64", "arp", "pwd", "cd", "locale", "env", "printenv",
     "iptables-save", "ip6tables-save", "dpkg-query", "apt-cache", "nproc", "tty", "logname",
     "users", "nstat", "conntrack", "ethtool", "sestatus", "getenforce", "aa-status", "lslogins",

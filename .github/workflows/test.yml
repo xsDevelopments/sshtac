@@ -1,0 +1,59 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install tmux (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
+      - run: tmux -V
+      - name: Install sshtac
+        run: python -m pip install .
+      - name: Run tests
+        # Run from a scratch copy of tests/ so they import the installed
+        # package, not the source tree. No API key: the tmux test uses the
+        # scripted fake model.
+        run: |
+          cp -R tests "$RUNNER_TEMP/tests"
+          cd "$RUNNER_TEMP"
+          python -m unittest discover -s tests -t . -v
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - name: Check the wheel installs and runs
+        run: |
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install dist/*.whl
+          /tmp/v/bin/sshtac --version
+          /tmp/v/bin/sshtac config --example | grep -q '\[ai\]'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

@@ -1,11 +1,32 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sshtac"
-version = "0.1.0.dev0"
+dynamic = ["version"]
 description = "tmux AI companion for human-in-the-loop SSH work"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "xs Developments", email = "xs.net.au@gmail.com" }]
+keywords = ["ssh", "tmux", "incident-response", "claude", "ai", "terminal", "sysadmin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Terminals",
+]
+# Runtime requirement that pip can't install: tmux >= 3.2 on PATH.
+# `sshtac` checks it at startup and says how to install it if it's missing.
 requires-python = ">=3.11"
 dependencies = ["anthropic>=1.15"]
 
@@ -14,6 +35,9 @@ sshtac = "sshtac.cli:main"
 
 [tool.setuptools]
 packages = ["sshtac"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sshtac.__version__" }
 
 [tool.setuptools.package-data]
 sshtac = ["config.example.toml"]

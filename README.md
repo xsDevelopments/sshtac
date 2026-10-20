@@ -8,14 +8,23 @@ the terminal as potentially hostile.
 
 ## Quick start
 
+Needs **Linux or macOS**, **Python 3.11+**, **tmux 3.2+** and an Anthropic API key.
+
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e .   # once, in this folder
-ln -s "$PWD/.venv/bin/sshtac" ~/.local/bin/sshtac      # once: run `sshtac` from anywhere
+pipx install sshtac                                   # once (install tmux first: apt install tmux / brew install tmux)
 sshtac config --set-key                               # once: save your Anthropic API key
 sshtac user@your-server                               # or just `sshtac` for a local shell
 ```
 
-(Or install it with `pipx install .`, which puts `sshtac` on your PATH by itself.)
+Upgrade with `pipx upgrade sshtac`. No pipx? `sudo apt install pipx` or `brew install pipx`, then
+`pipx ensurepath`.
+
+From source (for development):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e .   # once, in this folder
+ln -s "$PWD/.venv/bin/sshtac" ~/.local/bin/sshtac      # once: run `sshtac` from anywhere
+```
 
 If you skip `--set-key`, sshtac asks for the key when it starts (input hidden) and offers to save it. To leave:
 type `/quit` in the chat pane (ends everything) or `/detach` (keeps it running; run `sshtac` again to
@@ -131,10 +140,10 @@ values.
 - **Terminal output is untrusted.** It is redacted, delimited, and the local policy check gates
   every command regardless of the AI's label.
 - **Secrets never touch disk.** Placeholder values live in memory only, and the API key too unless
-  you choose to save it in the owner-only key file. Edits go through
-  a 0600 temp file in a private runtime directory (`$XDG_RUNTIME_DIR/sshtac/`, a RAM disk on most
-  Linux systems) and are deleted straight after. The API key is kept out of the shell pane's
-  environment.
+  you choose to save it in the owner-only key file. Edits go through a 0600 temp file in a private
+  runtime directory (`$XDG_RUNTIME_DIR/sshtac/`, a RAM disk on most Linux systems, or
+  `/tmp/sshtac-$UID/` where that isn't set, e.g. macOS) and are deleted straight after. The API key
+  is kept out of the shell pane's environment.
 - sshtac runs **its own tmux server** (`tmux -L sshtac`), so its keys and settings never affect your
   normal tmux.
 
@@ -273,3 +282,7 @@ test plan, run against a throwaway SSH container, is in [TESTING.md](TESTING.md)
 | `policy.py` | local risk classifier |
 | `charsafe.py`, `placeholders.py`, `marks.py` | character checks, safe substitution, F6 range maths |
 | `ipc.py`, `runtime.py`, `tmuxctl.py`, `audit.py`, `config.py` | plumbing |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

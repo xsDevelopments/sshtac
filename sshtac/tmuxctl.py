@@ -39,7 +39,10 @@ class Tmux:
         try:
             p = subprocess.run(self.argv(*args), input=input, capture_output=True, timeout=10)
         except FileNotFoundError:
-            raise TmuxError("tmux not found on PATH") from None
+            raise TmuxError(
+                "tmux not found on PATH; sshtac needs tmux 3.2 or newer "
+                "(Debian/Ubuntu: sudo apt install tmux; macOS: brew install tmux)"
+            ) from None
         except subprocess.TimeoutExpired:
             raise TmuxError(f"tmux {args[0]} timed out") from None
         if check and p.returncode != 0:
