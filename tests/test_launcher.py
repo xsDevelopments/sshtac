@@ -1,7 +1,7 @@
 import unittest
 
 from sshtac import config
-from sshtac.launcher import _shell_cmd, session_name, ssh_destination
+from sshtac.launcher import _shell_cmd, reconnect_message, session_name, ssh_destination
 from sshtac.tmuxctl import parse_version
 
 
@@ -21,6 +21,19 @@ class TestSshParsing(unittest.TestCase):
         }
         for args, want in cases.items():
             self.assertEqual(ssh_destination(list(args)), want, args)
+
+    def test_reconnect_message(self):
+        import time
+
+        now = time.mktime((2026, 10, 21, 15, 0, 0, 0, 0, -1))
+        today = int(time.mktime((2026, 10, 21, 14, 2, 0, 0, 0, -1)))
+        m = reconnect_message(["root@guildford", "-p", "22614"], today, now)
+        self.assertIn("from 14:02 (ssh root@guildford -p 22614)", m)
+        self.assertIn("/quit", m)
+        earlier = int(time.mktime((2026, 10, 19, 9, 5, 0, 0, 0, -1)))
+        self.assertIn("from 19 Oct 09:05 (local shell)", reconnect_message([], earlier, now))
+        self.assertIn("ssh 'x##y'", reconnect_message(["x#y"], today, now))  # not a tmux format
+        self.assertIn("…)", reconnect_message(["h" * 100], today, now))
 
     def test_session_name(self):
         self.assertEqual(session_name([]), "sshtac-local")

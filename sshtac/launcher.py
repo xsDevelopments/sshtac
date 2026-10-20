@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from sshtac import runtime
@@ -63,6 +64,23 @@ def session_name(ssh_args: list[str]) -> str:
     host = re.sub(r"^ssh://", "", host)
     host = re.sub(r"[^A-Za-z0-9_-]+", "-", host).strip("-")[:40]
     return f"sshtac-{host or 'ssh'}"
+
+
+BANNER_MS = 8000
+
+
+def reconnect_message(ssh_args: list[str], created: int, now: float | None = None) -> str:
+    """Status-line banner shown when `sshtac` re-attaches to a running session
+    instead of starting a new one (e.g. one still sitting at a password prompt)."""
+    started = time.localtime(created)
+    same_day = time.strftime("%Y%m%d", started) == time.strftime("%Y%m%d", time.localtime(now))
+    when = time.strftime("%H:%M" if same_day else "%d %b %H:%M", started)
+    what = "ssh " + shlex.join(ssh_args) if ssh_args else "local shell"
+    if len(what) > 60:
+        what = what[:59] + "…"
+    msg = (f"sshtac: reconnected to your session from {when} ({what}). "
+           "For a fresh start: /quit in the chat, then run sshtac again")
+    return msg.replace("#", "##")  # display-message expands formats
 
 
 def tac_argv() -> list[str]:
@@ -256,6 +274,7 @@ def launch(
     _check_tmux(tmux)
     runtime.server_dir(cfg.tmux_socket)
     name = session_name(ssh_args)
+    banner = None
     if tmux.has_session(name):
         print(f"sshtac: attaching to existing session {name}", file=sys.stderr)
         problems = decorate_session(tmux, name)
@@ -264,6 +283,7 @@ def launch(
                 f"session {name} looks broken ({'; '.join(problems)}). "
                 f"End it with `sshtac stop --session {name}` and start again."
             )
+        banner = _reconnect_banner(tmux, name)
     else:
         if prompt_for_key:
             ask_for_key()
@@ -295,8 +315,28 @@ def launch(
         env = dict(os.environ)
         if env.pop("TMUX", None):
             print("sshtac: starting inside tmux; nesting a separate sshtac tmux server", file=sys.stderr)
-        os.execvpe(tmux.binary, tmux.argv("attach-session", "-t", f"={name}"), env)
+        os.execvpe(tmux.binary, attach_argv(tmux, name, banner), env)
     return name
+
+
+def attach_argv(tmux: Tmux, name: str, banner: str | None = None) -> list[str]:
+    argv = tmux.argv("attach-session", "-t", f"={name}")
+    if banner:
+        # Runs once the client is attached, so the message goes to it.
+        argv += [";", "display-message", "-d", str(BANNER_MS), banner]
+    return argv
+
+
+def _reconnect_banner(tmux: Tmux, name: str) -> str | None:
+    try:
+        created = int(tmux.display(f"={name}:", "#{session_created}"))
+        raw = tmux.get_option(name, "@sshtac_ssh_args")
+        args = json.loads(raw) if raw else []
+    except (TmuxError, ValueError):
+        return None
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        args = []
+    return reconnect_message(args, created)
 
 
 def has_env_credentials(env: dict[str, str] | None = None) -> bool:

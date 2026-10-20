@@ -15,7 +15,8 @@ import unittest
 from pathlib import Path
 
 from sshtac import config, runtime
-from sshtac.launcher import launch, tac_env
+from sshtac.launcher import _reconnect_banner, attach_argv, launch, tac_env
+from sshtac.tmuxctl import Tmux
 
 SOCKET = f"sshtac-test-{os.getpid()}"
 SESSION = "sshtac-local"
@@ -138,6 +139,60 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(tmux("show-options", "-gv", "mouse").strip(), "on")
         self.assertIn("send", tmux("list-keys", "-T", "root", "F6"))
         self.assertEqual(tmux("show-options", "-pqv", "-t", self.exec_, "@sshtac_role").strip(), "EXECUTE")
+
+    def test_1f_reattach_shows_reconnect_banner(self):
+        import fcntl
+        import pty
+        import select
+        import struct
+        import termios
+
+        banner = _reconnect_banner(Tmux(SOCKET), SESSION)
+        self.assertIn("reconnected to your session from", banner)
+        self.assertIn("(local shell)", banner)
+        # Attach at the window's own size so later tests' panes don't reflow.
+        w, h = map(int, tmux("display-message", "-p", "-t", f"={SESSION}:", "#{window_width} #{window_height}").split())
+        pid, fd = pty.fork()
+        if pid == 0:  # child: become a real attached client
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", h + 1, w, 0, 0))  # +1: status line
+            os.environ["TERM"] = "xterm-256color"
+            os.environ.pop("TMUX", None)
+            argv = attach_argv(Tmux(SOCKET), SESSION, "sshtac-banner-test")
+            os.execvp(argv[0], argv)
+        out = b""
+
+        def drain(until, timeout: float) -> None:
+            nonlocal out
+            end = time.monotonic() + timeout
+            while not until() and time.monotonic() < end:
+                if select.select([fd], [], [], 0.1)[0]:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError:
+                        chunk = b""
+                    if not chunk:
+                        return
+                    out += chunk
+
+        exited = False
+
+        def child_exited() -> bool:
+            nonlocal exited
+            exited = exited or os.waitpid(pid, os.WNOHANG)[0] == pid
+            return exited
+
+        try:
+            drain(lambda: b"sshtac-banner-test" in out, 5)
+        finally:
+            subprocess.run(["tmux", "-L", SOCKET, "detach-client", "-s", f"={SESSION}"], capture_output=True)
+            # Keep reading so the client can write its exit output (a full pty
+            # blocks it, as on macOS), and never wait forever.
+            drain(child_exited, 5)
+            if not child_exited():
+                os.kill(pid, 9)
+                os.waitpid(pid, 0)
+            os.close(fd)
+        self.assertIn(b"sshtac-banner-test", out)
 
     def test_1e_changed_key_unbinds_the_old_one(self):
         import copy

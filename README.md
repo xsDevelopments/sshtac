@@ -249,6 +249,9 @@ sshtac config [--init | --example]
 
 The session is named after the host (`sshtac-web-01-example-com`, or `sshtac-local`). Running `sshtac` again
 reattaches, and also repairs the session's keys and settings if a previous start was interrupted.
+When it reattaches, the bottom line says so for a few seconds ("reconnected to your session from
+14:02 (ssh …)"), so an old session (say, one still at a password prompt) isn't mistaken for a new
+connection. For a fresh start, `/quit` it first.
 
 ## Limitations
 

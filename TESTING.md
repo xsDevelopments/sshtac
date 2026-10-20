@@ -80,8 +80,8 @@ printing the key. A new terminal with no environment key now starts without aski
 prompt appears. Restore with `chmod 600`.
 
 **T3 Detach and reattach.** Type `/detach`. Then run `sshtac …` with the same arguments again.
-Expect: back in the same session with the SSH connection still up, and "attaching to existing
-session".
+Expect: back in the same session with the SSH connection still up. The status line shows
+"sshtac: reconnected to your session from HH:MM (ssh …)" for about 8 seconds.
 
 **T4 Quit.** Type `/quit` and answer `n`, then `/quit` and `y`.
 Expect: `n` keeps everything running. `y` returns you to your terminal;
