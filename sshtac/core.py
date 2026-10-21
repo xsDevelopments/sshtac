@@ -18,6 +18,7 @@ import secrets
 import signal
 import sys
 import threading
+import time
 from typing import Any
 
 from sshtac import ipc, llm, policy, runtime
@@ -30,12 +31,15 @@ from sshtac.ui import ChatUI
 
 MAX_SELECTION = 2 * 1024 * 1024
 MAX_CHAT = 20_000
+# Lines arriving closer together than this are one paste, not separate messages.
+PASTE_GAP = 0.05
 MAX_SECRETS = 64
 LOG_KINDS = ("block", "edit")
 
 HELP = """\
 Type a question here and press Enter. Commands: /help /status /mark /sent
 Tip: type a comment without pressing Enter, then {send_results}/{send_selection}: it goes along with the output
+     Pasted lines are held as one message (...> prompt) until you press Enter
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
 Leave: /detach (or Ctrl+B then d) keeps everything running — run sshtac again to come back.
@@ -69,6 +73,7 @@ class Core:
         self.last_sent = ""
         # Set while a send waits for the half-typed chat line (see _take_draft).
         self._draft_slot: dict[str, Any] | None = None
+        self._paste_pending = False  # lines of a paste held back, waiting for Enter
         self.fake_model = os.environ.get("SSHTAC_TEST_FAKE_MODEL") == "1"
         if self.fake_model:
             from sshtac.testing import FakeClient
@@ -149,23 +154,55 @@ class Core:
     def _input_loop(self) -> None:
         if not sys.stdin.isatty():
             threading.Event().wait()  # nothing to read; serve IPC until killed
+        # A multi-line paste reaches us as several Enter-terminated lines in
+        # quick succession. Those are collected into one message, which is sent
+        # on your next Enter (so you can add to it) or with F5/F6.
+        pending: list[str] = []
+
+        def set_pending(lines: list[str]) -> None:
+            pending[:] = lines
+            with self._lock:
+                self._paste_pending = bool(lines)
+
         while True:
+            started = time.monotonic()
             try:
-                line = self.ui.read_line().strip()
+                line = self.ui.read_line(continuing=bool(pending))
             except KeyboardInterrupt:
                 print()
+                if pending:
+                    set_pending([])
+                    self.ui.say("(pasted text discarded)", "dim", trusted=True)
                 continue
             except EOFError:
                 print()
                 self.ui.say("(Ctrl-D ignored — use `sshtac stop` to end the session)", "dim", trusted=True)
                 continue
+            quick = time.monotonic() - started < PASTE_GAP
+            waiting = self.ui.input_waiting(PASTE_GAP)
             with self._lock:
                 slot, self._draft_slot = self._draft_slot, None
             if slot is not None:
-                slot["text"] = line  # submitted for a send (F5/F6), not a chat message
+                # Submitted for a send (F5/F6), not a chat message.
+                slot["text"] = "\n".join([*pending, line]).strip()
+                set_pending([])
                 slot["done"].set()
-            elif line:
-                self._handle_chat(line)
+            elif waiting or (pending and quick):
+                set_pending([*pending, line])  # more of a paste
+                if not waiting:
+                    k = self.cfg.keys
+                    self.ui.say(
+                        f"(pasted {len(pending)} line{'s' * (len(pending) != 1)}, not sent yet: add more and press Enter to send, "
+                        f"or {k['send_results']} to send with new shell output; Ctrl-C discards)",
+                        "dim", trusted=True,
+                    )
+            elif pending:
+                text = "\n".join([*pending, line]).strip()
+                set_pending([])
+                if text:
+                    self._work.put({"cmd": "chat", "text": text[:MAX_CHAT]})
+            elif line.strip():
+                self._handle_chat(line.strip())
 
     def _handle_chat(self, line: str) -> None:
         if line in ("/help", "/?"):
@@ -414,7 +451,9 @@ class Core:
         same in GNU readline, vi mode and macOS's libedit, and leaves it on
         screen. Returns the slot the input loop fills, or None."""
         text = self.ui.draft()
-        if not text.strip() or text.lstrip().startswith("/"):
+        with self._lock:
+            paste = self._paste_pending
+        if not paste and (not text.strip() or text.lstrip().startswith("/")):
             return None
         pane = self.tmux.get_option(self.session, "@sshtac_chat_pane")
         if not pane:

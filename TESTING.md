@@ -106,6 +106,12 @@ Expect: your line is submitted (it stays on screen, followed by "sent results bu
 `you>` prompt appears, and the AI answers the question about that output. `/sent` shows the output
 followed by your question. A half-typed `/command` stays in the input line instead.
 
+**T7c Multi-line paste.** Copy three lines of text and paste them into the chat.
+Expect: "(pasted 3 lines, not sent yet …)" and a `...>` prompt; nothing goes to the AI. Type a
+question and press Enter: the AI gets one message with the three lines and your question. Paste
+again and press Ctrl-C: "(pasted text discarded)". Paste again and press F6 instead: the lines go
+along with the new shell output.
+
 **T8 Scrolling.** Scroll the chat pane with the wheel, then press **q**.
 Expect: the scroll works, and q returns to the live view with the prompt intact.
 

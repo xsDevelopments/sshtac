@@ -46,6 +46,7 @@ come back). The bottom line of the screen always shows the keys.
 | Ask the AI something | Click the chat pane (or **F4**) and type at `you>` |
 | Send new shell output | **F6**: everything since your last approved command |
 | Send a specific bit | Drag over it with the mouse, then **F5** |
+| Paste several lines into the chat | Just paste: they're held as one message (`...>` prompt) until you press Enter, so you can add a question first |
 | Send output *with* a comment or question | Type it at `you>` without pressing Enter, then **F6** (or **F5**): it goes along with the output |
 | Run the proposed command | **F7** (destructive ones ask you to type `yes`) |
 | Reject it | **F8** |

@@ -8,7 +8,9 @@ untrusted text.
 
 from __future__ import annotations
 
+import select
 import sys
+import termios
 import threading
 
 from sshtac.pipeline import strip
@@ -41,6 +43,7 @@ class ChatUI:
     """
 
     prompt = "you> "
+    cont_prompt = "...> "  # more lines of a paste
 
     def __init__(self, out=None):
         self.out = out or sys.stdout
@@ -48,6 +51,7 @@ class ChatUI:
         self._lock = threading.Lock()
         self._in_input = False
         self._at_main_prompt = False
+        self._shown_prompt = self.prompt
         self._stale: str | None = None
         try:
             import readline  # noqa: F401  (line editing for input())
@@ -63,22 +67,52 @@ class ChatUI:
         with self._lock:
             if self._in_input and self.colour:
                 buf = self._line_buffer()
-                self.out.write("\r\x1b[2K" + text + "\n" + self.prompt + buf)
+                self.out.write("\r\x1b[2K" + text + "\n" + self._shown_prompt + buf)
             else:
                 self.out.write(text + "\n")
             self.out.flush()
 
-    def read_line(self, prompt: str | None = None) -> str:
-        """Blocking input(); raises EOFError / KeyboardInterrupt like input()."""
+    def read_line(self, prompt: str | None = None, *, continuing: bool = False) -> str:
+        """Blocking input(); raises EOFError / KeyboardInterrupt like input().
+        No prompt means the chat prompt (`...>` when `continuing` a paste)."""
+        chat = prompt is None
+        shown = (self.cont_prompt if continuing else self.prompt) if chat else prompt
         with self._lock:
             self._in_input = True
-            self._at_main_prompt = prompt is None
+            self._at_main_prompt = chat
+            self._shown_prompt = shown
             self._stale = self._readline.get_line_buffer() if self._readline else None
         try:
-            return input(self.prompt if prompt is None else prompt)
+            return input(shown)
         finally:
             with self._lock:
                 self._in_input = self._at_main_prompt = False
+
+    def input_waiting(self, timeout: float) -> bool:
+        """More typed or pasted input is already queued on stdin. The terminal
+        is briefly taken out of line mode for the check: in line mode a last
+        pasted line without a newline doesn't count as readable (macOS)."""
+        try:
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+        except (OSError, ValueError, termios.error):
+            old = None
+        try:
+            if old is not None:
+                new = list(old)
+                new[3] &= ~(termios.ICANON | termios.ECHO)
+                new[6] = list(old[6])
+                new[6][termios.VMIN], new[6][termios.VTIME] = 1, 0
+                termios.tcsetattr(fd, termios.TCSANOW, new)
+            return bool(select.select([sys.stdin], [], [], timeout)[0])
+        except (OSError, ValueError, termios.error):
+            return False
+        finally:
+            if old is not None:
+                try:
+                    termios.tcsetattr(fd, termios.TCSANOW, old)
+                except termios.error:
+                    pass
 
     def draft(self) -> str:
         """What is typed at the `you>` prompt but not yet entered ("" if the

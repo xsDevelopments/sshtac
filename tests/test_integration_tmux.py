@@ -264,6 +264,37 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(self.chat_input_line(), "you> /stat")
         tmux("send-keys", "-t", self.chat, "C-u")
 
+    def paste_into_chat(self, text: str) -> None:
+        # Like a terminal paste without bracketed paste: tmux turns LF into CR.
+        tmux("set-buffer", "-b", "t", text)
+        tmux("paste-buffer", "-d", "-b", "t", "-t", self.chat)
+
+    def test_2d_multiline_paste_is_one_message_sent_on_enter(self):
+        replies = self.chat_text().count("FAKE MODEL received:")
+        self.paste_into_chat("alpha one\n  beta two\ngamma three\n")
+        self.assertTrue(wait_for(lambda: "(pasted 3 lines, not sent yet" in self.chat_text()), self.chat_text())
+        time.sleep(0.3)
+        self.assertEqual(self.chat_text().count("FAKE MODEL received:"), replies)  # nothing sent yet
+        tmux("send-keys", "-t", self.chat, "-l", "what are these?")
+        tmux("send-keys", "-t", self.chat, "Enter")
+        self.assertTrue(wait_for(lambda: self.chat_text().count("FAKE MODEL received:") == replies + 1))
+        time.sleep(0.3)
+        self.assertEqual(self.chat_text().count("FAKE MODEL received:"), replies + 1)  # one message
+        chat = self.audit_events()
+        sent = [e for e in chat if e["event"] == "chat"][-1]["text"]
+        self.assertEqual(sent, "alpha one\n  beta two\ngamma three\nwhat are these?")
+
+    def test_2e_paste_then_f6_goes_with_the_output(self):
+        tmux("send-keys", "-t", self.shell, "echo FOURTH", "Enter")
+        time.sleep(0.4)
+        self.paste_into_chat("p-one\np-two")  # no final newline: p-two stays in the input line
+        self.assertTrue(wait_for(lambda: "...> p-two" in self.chat_text()))
+        self.assertEqual(sshtac("send", "--results", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: "FOURTH" in self.chat_text().rsplit("FAKE MODEL received:", 1)[-1]))
+        send = [e for e in self.audit_events() if e["event"] == "send"][-1]
+        self.assertEqual(send["chat"], "p-one\np-two")
+        self.assertTrue(wait_for(lambda: self.chat_input_line() == "you>"), self.chat_input_line())
+
     def test_3_selection(self):
         r = sshtac("send", "--selection", "--session", SESSION, stdin="sel \x1b[31mAKIAIOSFODNN7EXAMPLE\x1b[0m")
         self.assertEqual(r.returncode, 0, r.stderr)
