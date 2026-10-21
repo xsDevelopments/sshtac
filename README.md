@@ -33,9 +33,9 @@ come back). The bottom line of the screen always shows the keys.
 ## The screen
 
 ```
-┌─ SHELL ──────────────┬─ AI CHAT — type here ┐
+┌─[ SHELL ]────────────┬─[ AI CHAT — type here ]
 │ your shell / ssh     │ explanations, Q&A    │
-│                      ├─ EXECUTE ────────────┤
+│                      ├─[ EXECUTE ]──────────┤
 │                      │ proposed command,    │
 │                      │ risk, approve/edit   │
 └──────────────────────┴──────────────────────┘

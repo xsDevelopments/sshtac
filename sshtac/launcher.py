@@ -124,7 +124,7 @@ def configure_server(tmux: Tmux, cfg: Config) -> None:
         # Label panes by role. @sshtac_role is our own option: a remote program can
         # change a pane's title with an escape sequence, but not this.
         ("pane-border-status", "top"),
-        ("pane-border-format", " #{?@sshtac_role,#{@sshtac_role},} "),
+        ("pane-border-format", "#{?@sshtac_role,[ #{@sshtac_role} ],}"),  # ─[ SHELL ]───
         ("pane-active-border-style", "fg=cyan,bold"),
         ("status-left", " sshtac #{session_name} "),
         ("status-left-length", "40"),
