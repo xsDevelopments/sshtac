@@ -134,6 +134,29 @@ start/end, each send (redacted, as sent), the AI's replies and proposals, sshtac
 (before and after), approvals, rejections and refusals. Placeholder **names** are logged, never their
 values.
 
+Turn a log into something you can hand to others, or check the policy against what the AI proposed:
+
+```bash
+sshtac report > incident.md               # Markdown timeline of the latest session
+sshtac report LOG.jsonl -o incident.md    # a specific log; the file is created 0600
+sshtac report --full                      # also include the full terminal output and AI replies
+sshtac review                             # replay every proposed command (all logs) through the policy
+```
+
+`sshtac report` lists the target, start and end (local time and UTC) and model, then each step in
+order: what was sent (source, size, redactions; the text itself only with `--full`), the first lines
+of each AI reply, every proposed command with its risk rating and what happened to it (approved,
+approved after edit with before → after, rejected, blocked, superseded), refusals and errors. It ends
+with a table of the commands that were approved and pasted into the shell. It prints only what the
+log contains, so no secret values; AI and terminal text is made inert (links, images and HTML are
+escaped, control characters shown as `⟨U+001B⟩`).
+
+`sshtac review [LOGS...]` re-checks every command the AI ever proposed with the current policy
+(including your config's extra patterns) and lists where it disagrees with the AI's own label:
+**stricter** (likely false positives, grouped by the reason that set the level) and **looser** (the
+AI was more cautious, so a rule may be missing), with counts. Commands rated differently now than
+during the session are listed too, so you can confirm a policy fix. Neither command changes the logs.
+
 ## Safety model
 
 - **Local only.** sshtac, your API key and the logs stay on your machine. SSH runs inside the left
@@ -246,6 +269,8 @@ sshtac [ssh args...]        start, or reattach to, a session (no args: a local s
 sshtac -- <ssh args...>     the same, when the host is named like a sshtac command (e.g. "config")
 sshtac stop [--session S]   end a session
 sshtac config [--init | --example]
+sshtac report [LOG | --latest] [--full] [-o FILE]   Markdown report of a session's audit log
+sshtac review [LOGS... | --all]                     policy vs the AI's labels, over the audit logs
 ```
 
 The session is named after the host (`sshtac-web-01-example-com`, or `sshtac-local`). Running `sshtac` again

@@ -8,6 +8,10 @@
     sshtac config --example       print the documented example config
     sshtac config --set-key       save your API key to ~/.config/sshtac/api_key (private file)
     sshtac config --remove-key    delete that file
+    sshtac report [LOG|--latest] [--full] [-o FILE]
+                                  Markdown incident timeline of one audit log (default: latest)
+    sshtac review [LOGS...|--all] replay proposed commands through the current policy and list
+                                  where it disagrees with the AI's risk label (default: all logs)
 
 Internal (used by panes and key bindings):
     sshtac core|exec --session S
@@ -21,11 +25,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from sshtac import __version__
 
 CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark"}
-INTERNAL = {"core", "exec", "stop", "config", "_ssh", "_shell"} | CLIENT_CMDS
+INTERNAL = {"core", "exec", "stop", "config", "report", "review", "_ssh", "_shell"} | CLIENT_CMDS
 MAX_SELECTION_READ = 2 * 1024 * 1024
 
 
@@ -48,6 +53,16 @@ def _parser() -> argparse.ArgumentParser:
     g.add_argument("--example", action="store_true")
     g.add_argument("--set-key", action="store_true")
     g.add_argument("--remove-key", action="store_true")
+    r = sub.add_parser("report")
+    g = r.add_mutually_exclusive_group()
+    g.add_argument("log", nargs="?")
+    g.add_argument("--latest", action="store_true")
+    r.add_argument("--full", action="store_true")
+    r.add_argument("-o", "--output")
+    v = sub.add_parser("review")
+    g = v.add_mutually_exclusive_group()
+    g.add_argument("logs", nargs="*", default=[])
+    g.add_argument("--all", action="store_true")
     sub.add_parser("_ssh")
     sub.add_parser("_shell")
     return p
@@ -183,6 +198,50 @@ def _config_cmd(args) -> int:
     return 0
 
 
+def _report_cmd(args) -> int:
+    from sshtac import auditreport
+
+    try:
+        path = Path(args.log) if args.log else auditreport.latest()
+        text = auditreport.render(auditreport.load(path), full=args.full)
+    except OSError as e:
+        print(f"sshtac: {e}", file=sys.stderr)
+        return 1
+    if not args.output:
+        sys.stdout.write(text)
+        return 0
+    # The report quotes the session, so keep it as private as the log itself.
+    fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"sshtac: wrote {args.output} (from {path.name})", file=sys.stderr)
+    return 0
+
+
+def _review_cmd(args) -> int:
+    from sshtac import auditreport, config, policy, review
+
+    try:
+        cfg = config.load()
+    except config.ConfigError as e:
+        print(f"sshtac: config error: {e}", file=sys.stderr)
+        return 1
+    pol = cfg.raw["policy"]
+    classifier = policy.Classifier(pol["blocked_patterns"], pol["destructive_patterns"])
+    paths = [Path(p) for p in args.logs] or auditreport.log_files()
+    if not paths:
+        print(f"sshtac: no audit logs in {auditreport.state_dir()}", file=sys.stderr)
+        return 1
+    extra = len(pol["blocked_patterns"]) + len(pol["destructive_patterns"])
+    note = f" (plus {extra} pattern(s) from {cfg.source})" if extra else ""
+    try:
+        sys.stdout.write(review.run(paths, classifier, note))
+    except OSError as e:
+        print(f"sshtac: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] in (["-h"], ["--help"]):
@@ -221,6 +280,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.cmd == "config":
         return _config_cmd(args)
+    if args.cmd == "report":
+        return _report_cmd(args)
+    if args.cmd == "review":
+        return _review_cmd(args)
     if args.cmd == "_ssh":
         from sshtac.launcher import exec_ssh
 
