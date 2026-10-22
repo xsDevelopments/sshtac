@@ -96,7 +96,7 @@ class Core:
         self.server.start()
         threading.Thread(target=self._worker, daemon=True).start()
         self.ui.say(f"sshtac — session {self.session} — model {self.cfg.model}", "bold", trusted=True)
-        self.ui.say(HELP.format(**self.cfg.keys), "dim", trusted=True)
+        self.ui.say(HELP.format(**self.cfg.key_labels), "dim", trusted=True)
         self.ui.say(f"audit log: {self.audit.path}", "dim", trusted=True)
         self.ui.say(f"config: {self.cfg.source or 'built-in defaults (no config file)'}", "dim", trusted=True)
         if self.fake_model:
@@ -190,7 +190,7 @@ class Core:
             elif waiting or (pending and quick):
                 set_pending([*pending, line])  # more of a paste
                 if not waiting:
-                    k = self.cfg.keys
+                    k = self.cfg.key_labels
                     self.ui.say(
                         f"(pasted {len(pending)} line{'s' * (len(pending) != 1)}, not sent yet: add more and press Enter to send, "
                         f"or {k['send_results']} to send with new shell output; Ctrl-C discards)",
@@ -206,7 +206,7 @@ class Core:
 
     def _handle_chat(self, line: str) -> None:
         if line in ("/help", "/?"):
-            self.ui.say(HELP.format(**self.cfg.keys), "dim", trusted=True)
+            self.ui.say(HELP.format(**self.cfg.key_labels), "dim", trusted=True)
         elif line == "/status":
             conv = self.conversation
             self.ui.say(
@@ -607,7 +607,7 @@ class Core:
             injection_suspected=proposal.injection_suspected,
         )
         if self._push({"event": "proposal", "proposal": proposal.to_dict()}):
-            k = self.cfg.keys
+            k = self.cfg.key_labels
             colour = {policy.Risk.BLOCKED: "red", policy.Risk.DESTRUCTIVE: "red"}.get(eff, "cyan")
             self.ui.say(
                 f"→ command proposed ({eff.label}) in the execute pane: "

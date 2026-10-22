@@ -102,7 +102,7 @@ class Executor:
         self.clear()
         cmd = p["command"]
         a = assess(cmd, p.get("risk", ""), self.classifier)
-        k = self.cfg.keys
+        k = self.cfg.key_labels
         title = f"EXECUTE — proposal {p['id'][-8:]}" + (" (edited by you)" if self.edited else "")
         self.say(title, "bold")
         if p.get("injection_suspected"):

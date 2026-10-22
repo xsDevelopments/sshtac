@@ -90,8 +90,10 @@ Expect: `n` keeps everything running. `y` returns you to your terminal;
 
 ### Keys, mouse, focus
 
-**T5 Focus.** Click each pane; press **F4** several times.
-Expect: clicking focuses that pane (cyan border). F4 alternates between the shell and the chat.
+**T5 Focus.** Click each pane; press **Shift+Tab** several times, then type `ls /e` and press **Tab**
+in the shell.
+Expect: clicking focuses that pane (cyan border). Shift+Tab alternates between the shell and the
+chat. Plain Tab still completes `/etc/` in the shell.
 
 **T6 F6 results buffer.** In the shell run `echo one`, press **F6**; run `echo two`, press **F6**.
 Expect: the first send contains `one`. The second contains `two` but not `one` (the marker moved).

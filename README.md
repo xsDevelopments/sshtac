@@ -43,7 +43,7 @@ come back). The bottom line of the screen always shows the keys.
 
 | Do this | How |
 |---|---|
-| Ask the AI something | Click the chat pane (or **F4**) and type at `you>` |
+| Ask the AI something | Click the chat pane (or **Shift+Tab**) and type at `you>` |
 | Send new shell output | **F6**: everything since your last approved command |
 | Send a specific bit | Drag over it with the mouse, then **F5** |
 | Paste several lines into the chat | Just paste: they're held as one message (`...>` prompt) until you press Enter, so you can add a question first |
@@ -51,7 +51,7 @@ come back). The bottom line of the screen always shows the keys.
 | Run the proposed command | **F7** (destructive ones ask you to type `yes`) |
 | Reject it | **F8** |
 | Change it first | **F9** opens it in `$EDITOR` |
-| Jump between shell and chat | **F4** |
+| Jump between shell and chat | **Shift+Tab** |
 | Scroll a pane | Mouse wheel; **q** goes back to live |
 | Leave it running / come back | `/detach` or **Ctrl+B** then **d**; then `sshtac` |
 | End everything | `/quit` in the chat (asks to confirm), or `sshtac stop` from another terminal |
@@ -211,12 +211,14 @@ send_results = "F6"
 approve = "F7"
 reject = "F8"
 edit = "F9"
-focus_toggle = "F4"
+focus_toggle = "BTab"     # Shift+Tab (tmux calls it BTab; "S-Tab" is accepted too)
 ```
 
 Use tmux key names: function keys `F1`–`F24`, optionally with modifiers (`S-F7`, `M-F7`, `C-F7`),
-or any key with a modifier, such as `M-a` (Alt+a, or Option+a on a Mac) or `C-a` (Ctrl+a).
-Plain letters aren't allowed, because the key would be captured while you type. Two actions can't
+`BTab` (Shift+Tab), or any key with a modifier, such as `M-a` (Alt+a, or Option+a on a Mac) or
+`C-a` (Ctrl+a). Plain letters and plain Tab aren't allowed, because the key would be captured while
+you type (Tab would stop tab completion in the shell). Shift+Tab is free in bash, but zsh uses it
+for reverse completion; set `focus_toggle = "F4"` (or another key) if you need it. Two actions can't
 share a key. After restarting sshtac, the old keys are unbound automatically.
 
 To see what sshtac has bound:
@@ -233,8 +235,8 @@ Some terminals keep F-keys for themselves or send something tmux doesn't recogni
 - **macOS**: F-keys control brightness and volume. Hold **fn**, or turn on *Use F1, F2, etc. keys as
   standard function keys* in System Settings → Keyboard.
 - **VS Code / IDE terminals** often capture F-keys for debugging.
-- **PuTTY**'s default keyboard mode sends F1–F4 differently, so **F4** may not work. Set
-  *Terminal → Keyboard → The Function keys and keypad* to *Xterm R6*, or remap `focus_toggle`.
+- **PuTTY**'s default keyboard mode sends F1–F4 differently, so those keys may not work if you map
+  an action to one. Set *Terminal → Keyboard → The Function keys and keypad* to *Xterm R6*.
 - **sshtac inside another tmux or screen**: the outer one may catch the key first.
 
 To check what your terminal sends, press **Ctrl+V** and then the key in an ordinary shell.

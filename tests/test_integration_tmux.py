@@ -121,7 +121,7 @@ class TestEndToEnd(unittest.TestCase):
     def test_1b_mouse_and_labels(self):
         self.assertEqual(tmux("show-options", "-gv", "mouse").strip(), "on")
         self.assertIn("copy-pipe-no-clear", tmux("list-keys", "-T", "copy-mode", "MouseDragEnd1Pane"))
-        self.assertIn("@sshtac_chat_pane", tmux("list-keys", "-T", "root", "F4"))
+        self.assertIn("@sshtac_chat_pane", tmux("list-keys", "-T", "root", "BTab"))
         roles = {p: tmux("display-message", "-p", "-t", p, "#{@sshtac_role}").strip()
                  for p in (self.shell, self.chat, self.exec_)}
         self.assertEqual(roles[self.shell], "SHELL")

@@ -47,7 +47,7 @@ DEFAULTS: dict[str, Any] = {
         "approve": "F7",
         "reject": "F8",
         "edit": "F9",
-        "focus_toggle": "F4",  # jump between the shell and the chat
+        "focus_toggle": "BTab",  # Shift+Tab: jump between the shell and the chat
     },
     "policy": {
         # Extra regexes (case-insensitive) over the command's token skeleton.
@@ -66,11 +66,20 @@ DEFAULTS: dict[str, Any] = {
     },
 }
 
-# F-keys alone, or any key with a modifier. A bare letter/Enter/Space would be
-# captured from the root table while you type (and "y" could approve things).
+# F-keys alone, Shift+Tab, or any key with a modifier. A bare letter/Enter/Space/
+# Tab would be captured from the root table while you type (and "y" could
+# approve things); Shift+Tab is free in bash and in sshtac's own panes.
 _FKEY = r"F(?:[1-9]|1[0-9]|2[0-4])"
 _NAMED = r"Up|Down|Left|Right|Home|End|PageUp|PageDown|PPage|NPage|IC|DC|Insert|Delete|Escape|Enter|Space|Tab|BSpace"
-_KEY_RE = re.compile(rf"(?:(?:[CMS]-)*{_FKEY}|(?:[CMS]-)+(?:{_FKEY}|[A-Za-z0-9]|{_NAMED}))")
+_KEY_RE = re.compile(rf"(?:BTab|(?:[CMS]-)*{_FKEY}|(?:[CMS]-)+(?:{_FKEY}|[A-Za-z0-9]|{_NAMED}))")
+# tmux sees Shift+Tab as BTab; a binding written as S-Tab never fires.
+_KEY_ALIASES = {"S-Tab": "BTab"}
+KEY_LABELS = {"BTab": "Shift+Tab"}
+
+
+def key_label(key: str) -> str:
+    """How to show a tmux key name to a person."""
+    return KEY_LABELS.get(key, key)
 EXAMPLE = Path(__file__).with_name("config.example.toml")
 _SOCKET_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
@@ -116,6 +125,10 @@ class Config:
     source: str | None = None  # the file loaded, if any
 
     @property
+    def key_labels(self) -> dict[str, str]:
+        return {name: key_label(key) for name, key in self.keys.items()}
+
+    @property
     def ai(self) -> dict[str, Any]:
         return self.raw["ai"]
 
@@ -156,10 +169,12 @@ def from_dict(data: dict[str, Any]) -> Config:
     if not _SOCKET_RE.fullmatch(t["socket_name"]):
         raise ConfigError("tmux.socket_name must match [A-Za-z0-9_-]+")
     for name, key in data["keys"].items():
+        if isinstance(key, str) and key in _KEY_ALIASES:
+            key = data["keys"][name] = _KEY_ALIASES[key]
         if not _KEY_RE.fullmatch(key):
             raise ConfigError(
-                f"keys.{name} = {key!r}: use a function key (F1-F24) or a key with a "
-                f"modifier such as 'M-a', 'C-a' or 'S-F7'"
+                f"keys.{name} = {key!r}: use a function key (F1-F24), 'BTab' (Shift+Tab) or a "
+                f"key with a modifier such as 'M-a', 'C-a' or 'S-F7'"
             )
     used = list(data["keys"].values())
     if dupes := sorted({k for k in used if used.count(k) > 1}):

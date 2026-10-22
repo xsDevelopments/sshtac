@@ -53,7 +53,7 @@ send_results = "F6"     # send new shell output since the last command
 approve = "F7"
 reject = "F8"
 edit = "F9"
-focus_toggle = "F4"     # jump between the shell and the AI chat
+focus_toggle = "BTab"   # Shift+Tab: jump between the shell and the AI chat
 
 [policy]
 # Extra case-insensitive regexes, matched against the command's words

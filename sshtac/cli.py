@@ -192,7 +192,10 @@ def _config_cmd(args) -> int:
         return 1
     k = cfg.keys
     print(f"model: {cfg.model}   effort: {cfg.ai['effort']}   tmux server: -L {cfg.tmux_socket}")
-    print("keys:  " + "  ".join(f"{name}={key}" for name, key in k.items()))
+    print("keys:  " + "  ".join(
+        f"{name}={key}" + (f" ({config.key_label(key)})" if config.key_label(key) != key else "")
+        for name, key in k.items()
+    ))
     print(_key_status())
     print("config OK")
     return 0

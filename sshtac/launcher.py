@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from sshtac import runtime
-from sshtac.config import Config
+from sshtac.config import Config, key_label
 from sshtac.tmuxctl import MIN_VERSION, Tmux, TmuxError
 
 # Credentials the core needs. tmux copies these from the launching client's
@@ -107,7 +107,7 @@ def _shell_cmd(argv: list[str], env: dict[str, str]) -> str:
 def status_hints(cfg: Config) -> str:
     # tmux trims a too-long status-right from the left, so the most important
     # hint (how to get out) goes last.
-    k = cfg.keys
+    k = cfg.key_labels
     return (
         f"drag+{k['send_selection']} send selection │ {k['send_results']} send output │ "
         f"{k['approve']} approve {k['reject']} reject {k['edit']} edit │ {k['focus_toggle']} shell⇄chat │ "
@@ -178,7 +178,7 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         tmux.run("bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-no-clear")
     tmux.run(
         "bind-key", "-T", "root", k["send_selection"], "display-message",
-        f"Select text first (drag with the mouse), then press {k['send_selection']}",
+        f"Select text first (drag with the mouse), then press {key_label(k['send_selection'])}",
     )
     bound.append(f"root:{k['send_selection']}")
     # Toggle focus between the shell and the chat. select-pane doesn't expand

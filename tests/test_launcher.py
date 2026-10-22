@@ -274,6 +274,28 @@ class TestConfigFile(unittest.TestCase):
             with self.assertRaises(config.ConfigError, msg=bad):
                 config.from_dict(data)
 
+    def test_shift_tab_focus_key(self):
+        import copy
+
+        from sshtac.launcher import status_hints
+
+        cfg = config.from_dict(copy.deepcopy(config.DEFAULTS))
+        self.assertEqual(cfg.keys["focus_toggle"], "BTab")
+        self.assertEqual(cfg.key_labels["focus_toggle"], "Shift+Tab")
+        self.assertIn("Shift+Tab shell⇄chat", status_hints(cfg))
+        data = copy.deepcopy(config.DEFAULTS)
+        data["keys"]["focus_toggle"] = "S-Tab"  # tmux would never fire this; stored as BTab
+        self.assertEqual(config.from_dict(data).keys["focus_toggle"], "BTab")
+        for bad in ("Tab", "btab"):
+            data = copy.deepcopy(config.DEFAULTS)
+            data["keys"]["focus_toggle"] = bad
+            with self.assertRaises(config.ConfigError, msg=bad):
+                config.from_dict(data)
+        data = copy.deepcopy(config.DEFAULTS)
+        data["keys"]["approve"] = "S-Tab"  # same key as focus_toggle once normalised
+        with self.assertRaises(config.ConfigError):
+            config.from_dict(data)
+
     def test_duplicate_keys_rejected(self):
         import copy
 
