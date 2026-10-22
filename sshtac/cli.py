@@ -16,6 +16,7 @@
 Internal (used by panes and key bindings):
     sshtac core|exec --session S
     sshtac send --selection|--results --session S
+    sshtac copy --reply|--output --session S
     sshtac approve|reject|edit --session S
     sshtac _ssh | _shell
 """
@@ -29,7 +30,7 @@ from pathlib import Path
 
 from sshtac import __version__
 
-CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark"}
+CLIENT_CMDS = {"send", "approve", "reject", "edit", "mark", "copy"}
 INTERNAL = {"core", "exec", "stop", "config", "report", "review", "_ssh", "_shell"} | CLIENT_CMDS
 MAX_SELECTION_READ = 2 * 1024 * 1024
 
@@ -45,6 +46,11 @@ def _parser() -> argparse.ArgumentParser:
     g.add_argument("--selection", action="store_true")
     g.add_argument("--results", action="store_true")
     s.add_argument("--session")
+    c = sub.add_parser("copy")
+    g = c.add_mutually_exclusive_group(required=True)
+    g.add_argument("--reply", action="store_true")
+    g.add_argument("--output", action="store_true")
+    c.add_argument("--session")
     for name in ("approve", "reject", "edit", "mark", "stop"):
         sub.add_parser(name).add_argument("--session")
     c = sub.add_parser("config")
@@ -111,6 +117,8 @@ def _client(args, cfg) -> int:
             msg = {"cmd": "send", "source": "selection", "text": data.decode("utf-8", errors="replace")}
         else:
             msg = {"cmd": "send", "source": "results_buffer"}
+    elif args.cmd == "copy":
+        msg = {"cmd": "copy", "what": "reply" if args.reply else "output"}
     else:
         msg = {"cmd": args.cmd}
     try:

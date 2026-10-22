@@ -16,12 +16,13 @@ import os
 import queue
 import secrets
 import signal
+import subprocess
 import sys
 import threading
 import time
 from typing import Any
 
-from sshtac import ipc, llm, policy, runtime
+from sshtac import clipboard, ipc, llm, policy, runtime
 from sshtac.audit import AuditLog
 from sshtac.config import Config
 from sshtac.marks import Mark, capture_range, mark_at
@@ -42,6 +43,7 @@ Tip: type a comment without pressing Enter, then {send_results}/{send_selection}
      Pasted lines are held as one message (...> prompt) until you press Enter
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
+Copy:  drag copies a selection   {copy_reply} = copy the AI's last reply   {copy_output} = copy new shell output
 Leave: /detach (or Ctrl+B then d) keeps everything running — run sshtac again to come back.
        /quit ends sshtac completely, including the shell and any SSH connection."""
 
@@ -71,6 +73,7 @@ class Core:
         self.conversation: llm.Conversation | None = None
         self._client_factory = client_factory
         self.last_sent = ""
+        self.last_reply = ""  # for the copy_reply key
         # Set while a send waits for the half-typed chat line (see _take_draft).
         self._draft_slot: dict[str, Any] | None = None
         self._paste_pending = False  # lines of a paste held back, waiting for Enter
@@ -283,6 +286,11 @@ class Core:
         if cmd == "mark":
             self._work.put(msg)
             return {"ok": True}
+        if cmd == "copy":
+            # Here, not on the worker: it may be busy waiting for the model.
+            if msg.get("what") not in ("reply", "output"):
+                return {"ok": False, "error": "bad copy request"}
+            return self._copy(msg["what"])
         if cmd == "mark_now":
             # Synchronous: the executor sets the mark between paste and Enter.
             try:
@@ -426,7 +434,7 @@ class Core:
             raise RuntimeError("@sshtac_shell_pane is not set on this session")
         return pane
 
-    def _capture_results(self) -> tuple[str, str | None]:
+    def _capture_results(self, advance: bool = True) -> tuple[str, str | None]:
         pane = self._shell_pane()
         state, dead, alt = self.tmux.pane_state(pane)
         notes = []
@@ -438,7 +446,8 @@ class Core:
             rng = capture_range(self.mark, state)
             # Advance the mark to the current (cursor) line; it is included
             # again next time so the prompt + next command give context.
-            self.mark = mark_at(state)
+            if advance:
+                self.mark = mark_at(state)
         if rng.note:
             notes.append(rng.note)
         text = self.tmux.capture(pane, rng.start, rng.end)
@@ -582,8 +591,44 @@ class Core:
                 self.ui.say("(the model returned no text)", "yellow")
         if reply.proposal_error:
             self.ui.say(f"invalid command proposal ignored: {reply.proposal_error}", "yellow")
+        with self._lock:
+            self.last_reply = _reply_for_copy(reply)
         if reply.proposal:
             self._offer(reply.proposal)
+
+    # ---------------------------------------------------------------- clipboard
+
+    def _copy(self, what: str) -> dict[str, Any]:
+        if what == "reply":
+            with self._lock:
+                text = self.last_reply
+            label = "the AI's last reply"
+        else:
+            try:
+                text, _ = self._capture_results(advance=False)
+            except (TmuxError, RuntimeError) as e:
+                return {"ok": False, "error": str(e)}
+            label = "shell output since your last command"
+        if not text.strip():
+            msg = "nothing to copy yet" if what == "reply" else "no new shell output to copy"
+            self.ui.say(f"[copy] {msg}", "yellow", trusted=True)
+            return {"ok": True}
+        # tmux's buffer (Ctrl+B ] pastes it) and, with -w, the terminal via OSC 52.
+        self.tmux.run("load-buffer", "-w", "-", input=text.encode("utf-8"), check=False)
+        where = "tmux's buffer"
+        cmd = self.tmux.run("show-options", "-sv", "copy-command", check=False).strip()
+        if cmd:
+            try:
+                clipboard.copy(cmd, text)
+                where = "the clipboard"
+            except (OSError, subprocess.SubprocessError) as e:
+                self.ui.say(f"[copy] clipboard tool failed ({type(e).__name__}); copied to tmux's buffer only", "yellow",
+                            trusted=True)
+        elif self.cfg.raw["tmux"]["clipboard"] != "off":
+            where = "tmux's buffer and, if your terminal supports OSC 52, the clipboard"
+        lines = text.count("\n") + 1
+        self.ui.say(f"[copy] {label} ({lines} line{'s' * (lines != 1)}) → {where}", "cyan", trusted=True)
+        return {"ok": True}
 
     def _offer(self, proposal: llm.Proposal) -> None:
         with self._lock:
@@ -643,3 +688,13 @@ def main(session: str, cfg: Config) -> int:
         except EOFError:
             pass
         return 1
+
+
+def _reply_for_copy(reply: llm.Reply) -> str:
+    """What the copy_reply key copies: the reply text (or, without one, the
+    reasoning summary), then the proposed command on its own line."""
+    parts = [reply.text.strip() or (reply.reasoning or "").strip()]
+    if reply.proposal:
+        parts.append(f"Proposed command:\n{reply.proposal.command}")
+    return "\n\n".join(p for p in parts if p)
+

@@ -36,6 +36,15 @@ mouse = true
 # a percentage ("45%") or a number of cells ("80").
 right_width = "45%"
 exec_height = "35%"
+# Where copies go (mouse drag, copy mode, and the copy_reply / copy_output keys):
+#   "auto"  your clipboard tool (xclip, xsel, wl-copy or pbcopy) if one is found,
+#           plus OSC 52 for terminals that support it (Windows Terminal, kitty,
+#           WezTerm, iTerm2...). VTE terminals (xfce4-terminal, GNOME Terminal)
+#           ignore OSC 52, so there the tool is what makes copying work.
+#   "osc52" OSC 52 only (e.g. sshtac running on a server you SSH into)
+#   "off"   tmux's own buffer only (paste with Ctrl+B then ])
+#   or a command that reads the text on stdin, e.g. "xclip -selection primary"
+clipboard = "auto"
 
 [capture]
 # Most characters of terminal output sent to the AI in one go; longer
@@ -54,6 +63,8 @@ approve = "F7"
 reject = "F8"
 edit = "F9"
 focus_toggle = "BTab"   # Shift+Tab: jump between the shell and the AI chat
+copy_reply = "S-F4"     # copy the AI's last reply to the clipboard
+copy_output = "S-F5"    # copy shell output since your last command (not sent to the AI)
 
 [policy]
 # Extra case-insensitive regexes, matched against the command's words

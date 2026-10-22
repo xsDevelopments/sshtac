@@ -39,6 +39,11 @@ DEFAULTS: dict[str, Any] = {
         "mouse": True,  # click to focus, drag to select within a pane, wheel to scroll
         "right_width": "45%",
         "exec_height": "35%",
+        # Where copies go: "auto" = your clipboard tool (xclip, xsel, wl-copy,
+        # pbcopy) if one is found, plus OSC 52 for terminals that support it;
+        # "osc52" = OSC 52 only; "off" = tmux's buffer only; or your own command
+        # that reads stdin, e.g. "xclip -selection primary".
+        "clipboard": "auto",
     },
     "capture": {"max_chars": 20_000},
     "keys": {
@@ -48,6 +53,8 @@ DEFAULTS: dict[str, Any] = {
         "reject": "F8",
         "edit": "F9",
         "focus_toggle": "BTab",  # Shift+Tab: jump between the shell and the chat
+        "copy_reply": "S-F4",  # copy the AI's last reply to the clipboard
+        "copy_output": "S-F5",  # copy shell output since your last command (not sent)
     },
     "policy": {
         # Extra regexes (case-insensitive) over the command's token skeleton.
@@ -79,7 +86,9 @@ KEY_LABELS = {"BTab": "Shift+Tab"}
 
 def key_label(key: str) -> str:
     """How to show a tmux key name to a person."""
-    return KEY_LABELS.get(key, key)
+    if key in KEY_LABELS:
+        return KEY_LABELS[key]
+    return re.sub(r"^S-(F\d+)$", r"Shift+\1", key)
 EXAMPLE = Path(__file__).with_name("config.example.toml")
 _SOCKET_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
@@ -179,6 +188,8 @@ def from_dict(data: dict[str, Any]) -> Config:
     used = list(data["keys"].values())
     if dupes := sorted({k for k in used if used.count(k) > 1}):
         raise ConfigError(f"keys: {', '.join(dupes)} is bound to more than one action")
+    if not isinstance(t["clipboard"], str) or not t["clipboard"].strip():
+        raise ConfigError('tmux.clipboard must be "auto", "osc52", "off" or a command')
     for name in ("right_width", "exec_height"):
         if not re.fullmatch(r"\d{1,3}%|\d{1,4}", t[name]):
             raise ConfigError(f"tmux.{name} must be like '45%' or a cell count")

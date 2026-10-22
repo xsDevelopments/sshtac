@@ -117,6 +117,14 @@ along with the new shell output.
 **T8 Scrolling.** Scroll the chat pane with the wheel, then press **q**.
 Expect: the scroll works, and q returns to the live view with the prompt intact.
 
+**T8b Copy to the clipboard.** Run in xfce4-terminal (or GNOME Terminal) with `xclip` installed, and
+again in a terminal with OSC 52 (kitty, WezTerm or Windows Terminal) if you have one. Run
+`echo copy-test`, press **Shift+F5**, and paste into a text editor outside sshtac. Ask the AI anything,
+press **Shift+F4**, paste again. Drag over a word in the shell pane, release, paste again.
+Expect: each paste shows the text (the reply ends with its proposed command, if any), and the chat
+pane says `[copy] … → the clipboard`. Shift+F5 doesn't send anything to the AI: F6 afterwards still
+sends `copy-test`. With `clipboard = "off"` under `[tmux]` (restart sshtac), copies say "tmux's buffer".
+
 ### What is sent
 
 **T9 Redaction.** In the shell:

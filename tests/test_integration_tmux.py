@@ -63,7 +63,13 @@ class TestEndToEnd(unittest.TestCase):
         editor.write_text("#!/bin/sh\nprintf 'echo edited-ok-$((1+1))\\n' > \"$1\"\n")
         editor.chmod(0o700)
         os.environ["EDITOR"] = os.environ["VISUAL"] = str(editor)
-        cls.cfg = config.load(Path("/nonexistent"))
+        # Copies go to a file, never your real clipboard. SSHTAC_CONFIG makes
+        # every sshtac process here (CLI, core) use the same setting.
+        cls.clip = Path(cls.state.name, "clipboard.txt")
+        conf = Path(cls.state.name, "config.toml")
+        conf.write_text(f"[tmux]\nclipboard = \"cat > '{cls.clip}'\"\n")
+        os.environ["SSHTAC_CONFIG"] = str(conf)
+        cls.cfg = config.load()
         clean_shell = ["env", "-i", "PATH=/usr/bin:/bin", "TERM=tmux-256color", "PS1=t$ ",
                        "bash", "--norc", "--noprofile"]
         launch([], cls.cfg, attach=False, shell_argv=clean_shell)
@@ -75,7 +81,8 @@ class TestEndToEnd(unittest.TestCase):
 
     @classmethod
     def _cleanup(cls):
-        for var in ("SSHTAC_TMUX_SOCKET", "SSHTAC_TEST_FAKE_MODEL", "XDG_STATE_HOME", "EDITOR", "VISUAL"):
+        for var in ("SSHTAC_TMUX_SOCKET", "SSHTAC_TEST_FAKE_MODEL", "XDG_STATE_HOME", "EDITOR", "VISUAL",
+                    "SSHTAC_CONFIG"):
             os.environ.pop(var, None)
         subprocess.run(["tmux", "-L", SOCKET, "kill-server"], capture_output=True)
         # tmux leaves its socket file behind when the server exits. The server
@@ -306,6 +313,39 @@ class TestEndToEnd(unittest.TestCase):
         self.assertTrue(wait_for(lambda: "FAKE REASONING: the file is not a device" in self.chat_text()))
         self.assertIn("(reasoning summary)", self.chat_text())
         self.assertNotIn("(no text)", self.chat_text())
+
+    def test_3c_copy_keys_and_drag_copy(self):
+        self.assertIn(str(self.clip), tmux("show-options", "-sv", "copy-command"))
+        self.assertEqual(tmux("show-options", "-sv", "set-clipboard").strip(), "external")
+        keys = tmux("list-keys", "-T", "root")
+        self.assertIn("S-F4", keys)
+        self.assertIn("S-F5", keys)
+
+        self.clip.unlink(missing_ok=True)
+        self.propose("echo copied-reply-ok")
+        self.assertEqual(sshtac("copy", "--reply", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: self.clip.exists() and "echo copied-reply-ok" in self.clip.read_text()))
+        self.assertIn("Proposed command:", self.clip.read_text())
+        self.assertTrue(wait_for(lambda: "[copy] the AI's last reply" in self.chat_text()))
+        self.assertIn("echo copied-reply-ok", tmux("show-buffer"))  # tmux's buffer too
+        sshtac("reject", "--session", SESSION)
+
+        tmux("send-keys", "-t", self.shell, "echo COPY-OUT-$((40+2))", "Enter")
+        time.sleep(0.4)
+        self.clip.unlink(missing_ok=True)
+        self.assertEqual(sshtac("copy", "--output", "--session", SESSION).returncode, 0)
+        self.assertTrue(wait_for(lambda: self.clip.exists() and "COPY-OUT-42" in self.clip.read_text()))
+        # Copying doesn't send or move the mark: F6 still sends the same output.
+        sshtac("send", "--results", "--session", SESSION)
+        self.assertTrue(wait_for(lambda: "COPY-OUT-42" in self.chat_text().rsplit("FAKE MODEL received:", 1)[-1]))
+
+        # A mouse drag or copy-mode copy goes through tmux's copy-command.
+        self.clip.unlink(missing_ok=True)
+        tmux("copy-mode", "-t", self.shell)
+        tmux("send-keys", "-t", self.shell, "-X", "search-backward", "COPY-OUT-42")
+        tmux("send-keys", "-t", self.shell, "-X", "select-line")
+        tmux("send-keys", "-t", self.shell, "-X", "copy-pipe-and-cancel")
+        self.assertTrue(wait_for(lambda: self.clip.exists() and "COPY-OUT-42" in self.clip.read_text()))
 
     def test_4_approve_with_nothing_pending(self):
         self.assertEqual(sshtac("approve", "--session", SESSION).returncode, 0)

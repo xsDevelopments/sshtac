@@ -52,6 +52,7 @@ come back). The bottom line of the screen always shows the keys.
 | Reject it | **F8** |
 | Change it first | **F9** opens it in `$EDITOR` |
 | Jump between shell and chat | **Shift+Tab** |
+| Copy to your clipboard | Drag over text (copies on release); **Shift+F4** copies the AI's last reply; **Shift+F5** copies the shell output since your last command (without sending it) |
 | Scroll a pane | Mouse wheel; **q** goes back to live |
 | Leave it running / come back | `/detach` or **Ctrl+B** then **d**; then `sshtac` |
 | End everything | `/quit` in the chat (asks to confirm), or `sshtac stop` from another terminal |
@@ -212,6 +213,8 @@ approve = "F7"
 reject = "F8"
 edit = "F9"
 focus_toggle = "BTab"     # Shift+Tab (tmux calls it BTab; "S-Tab" is accepted too)
+copy_reply = "S-F4"
+copy_output = "S-F5"
 ```
 
 Use tmux key names: function keys `F1`–`F24`, optionally with modifiers (`S-F7`, `M-F7`, `C-F7`),
@@ -257,12 +260,27 @@ Mac users: in Terminal.app enable *Use Option as Meta key*; in iTerm2 set Option
 
 ### Copying and pasting
 
-Dragging selects text inside one pane, keeps it highlighted (so F5 can send it), and copies it into
-tmux's buffer. Paste it into the focused pane with **Ctrl+B** then **]**. Whether it also reaches
-your computer's clipboard depends on your terminal supporting OSC 52 (Windows Terminal, iTerm2 with
-clipboard access allowed, kitty, WezTerm, foot). To use your terminal's own selection instead, hold
-**Shift** while dragging (**Option** in iTerm2); that selection spans all panes. Pasting from your
-computer works as usual (e.g. Ctrl+Shift+V).
+Dragging selects text inside one pane, keeps it highlighted (so F5 can send it), and copies it to
+your clipboard when you release the button. **Shift+F4** copies the AI's last reply (with its
+proposed command, if any); **Shift+F5** copies the shell output since your last command, without
+sending it to the AI. The chat pane confirms each copy. Paste with your terminal's usual keys
+(e.g. Ctrl+Shift+V), or inside sshtac with **Ctrl+B** then **]**.
+
+How the text reaches your clipboard (`[tmux] clipboard` in the config):
+
+- **`"auto"` (default):** through `xclip`, `xsel`, `wl-copy` or `pbcopy` when sshtac runs on your
+  desktop, and also by OSC 52 for terminals that support it (Windows Terminal, kitty, WezTerm,
+  foot, iTerm2 with clipboard access allowed). VTE terminals (**xfce4-terminal**, GNOME Terminal,
+  sshTIK) ignore OSC 52, so there the tool is what makes it work: on Linux, install `xclip`
+  (`sudo apt install xclip`).
+- **`"osc52"`:** OSC 52 only, for sshtac running on a machine you SSH into.
+- **`"off"`:** tmux's buffer only.
+- **A command** that reads the text on stdin, e.g. `"xclip -selection primary"`.
+
+Programs in the panes can't set your clipboard through sshtac's tmux; only your own copies do.
+To use your terminal's own selection instead, hold **Shift** while dragging (**Option** in iTerm2);
+that selection spans all panes, so zoom the pane first with **Ctrl+B** then **z** (the same again
+unzooms).
 
 ## Commands
 

@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from sshtac import runtime
+from sshtac import clipboard, runtime
 from sshtac.config import Config, key_label
 from sshtac.tmuxctl import MIN_VERSION, Tmux, TmuxError
 
@@ -111,6 +111,7 @@ def status_hints(cfg: Config) -> str:
     return (
         f"drag+{k['send_selection']} send selection │ {k['send_results']} send output │ "
         f"{k['approve']} approve {k['reject']} reject {k['edit']} edit │ {k['focus_toggle']} shell⇄chat │ "
+        f"{k['copy_reply']}/{k['copy_output']} copy reply/output │ "
         f"q leave scroll │ exit: /quit in chat · detach: Ctrl+B d "
     )
 
@@ -134,8 +135,21 @@ def configure_server(tmux: Tmux, cfg: Config) -> None:
         ("window-status-current-format", ""),
     ):
         tmux.run("set-option", "-g", opt, val)
+    configure_clipboard(tmux, cfg)
     # tmux's right-click menu offers kill/respawn/swap on any pane; turn it off.
     tmux.run("unbind-key", "-T", "root", "MouseDown3Pane", check=False)
+
+
+def configure_clipboard(tmux: Tmux, cfg: Config, env: dict[str, str] | None = None) -> str | None:
+    """Make tmux's copies (mouse drag, copy mode) reach your clipboard.
+    Returns the clipboard command in use, if any."""
+    setting = cfg.raw["tmux"]["clipboard"]
+    cmd = clipboard.command(setting, env)
+    # "external": tmux sends its own copies to the terminal with OSC 52, but
+    # programs in the panes can't set your clipboard through it.
+    tmux.run("set-option", "-s", "set-clipboard", "off" if setting == "off" else "external")
+    tmux.run("set-option", "-s", "copy-command", clipboard.tmux_command(cmd) if cmd else "")
+    return cmd
 
 
 def install_bindings(tmux: Tmux, cfg: Config) -> None:
@@ -162,6 +176,8 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         (k["approve"], ("approve",)),
         (k["reject"], ("reject",)),
         (k["edit"], ("edit",)),
+        (k["copy_reply"], ("copy", "--reply")),
+        (k["copy_output"], ("copy", "--output")),
     ):
         tmux.run("bind-key", "-T", "root", key, "run-shell", "-b", client(*sub))
         bound.append(f"root:{key}")
