@@ -216,9 +216,26 @@ python3 -c "import json,sys; [print(r['ts'], r['event'], r.get('command') or r.g
 Expect: a readable sequence: session_start, send, model_reply, classification, approved/rejected,
 edit, block, session_end. No secret values anywhere.
 
+**T29 Report.** After a session that included an edit, a rejection and a blocked command (T13–T19):
+```bash
+sshtac report -o /tmp/report.md && ls -l /tmp/report.md && less /tmp/report.md
+```
+Expect: the file is `-rw-------`; header shows the target, model, start and end in local time with
+UTC in brackets; each send shows source and size but not the output; each proposal shows its risk
+and outcome (approved / approved after edit with before → after / rejected / blocked /
+superseded); the closing table lists only approved commands. `grep -c '<your secret>'
+/tmp/report.md` prints 0. `sshtac report --full` adds the sent output and full replies. Open the file
+in a Markdown viewer: the injection fixture's text (T12) shows as plain text, no clickable links.
+
+**T30 Review.** Run `sshtac review`.
+Expect: a count of replayed commands, then "stricter" groups headed by a policy reason and "looser"
+groups headed by "AI said X, local check says Y", each command with its log and time. T13's
+`curl … | bash` appears under stricter. Add `destructive_patterns = ['\buptime\b']` to the config,
+run it again: the note names the config file and any `uptime` proposals move to stricter.
+
 ## Cleanup
 
 ```bash
 docker stop sshtac-lab        # container A removes itself
-rm -rf /tmp/sshtac-lab /tmp/victim
+rm -rf /tmp/sshtac-lab /tmp/victim /tmp/report.md
 ```
