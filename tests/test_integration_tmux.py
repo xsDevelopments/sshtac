@@ -58,7 +58,7 @@ class TestEndToEnd(unittest.TestCase):
         os.environ["SSHTAC_TMUX_SOCKET"] = SOCKET
         os.environ["SSHTAC_TEST_FAKE_MODEL"] = "1"
         os.environ["XDG_STATE_HOME"] = cls.state.name
-        # A scripted "editor" for the F9 test: rewrites the file it is given.
+        # A scripted "editor" for the edit test: rewrites the file it is given.
         editor = Path(cls.state.name, "fake-editor")
         editor.write_text("#!/bin/sh\nprintf 'echo edited-ok-$((1+1))\\n' > \"$1\"\n")
         editor.chmod(0o700)
@@ -121,7 +121,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(sorted(panes), sorted([self.shell, self.chat, self.exec_]))
         self.assertEqual(os.stat(self.sock).st_mode & 0o777, 0o600)
         keys = tmux("list-keys", "-T", "root")
-        self.assertIn("F6", keys)
+        self.assertIn("F7", keys)
         self.assertIn("#{q:session_name}", keys)
         self.assertIn("fake model", self.chat_text())
 
@@ -140,11 +140,11 @@ class TestEndToEnd(unittest.TestCase):
         # no mouse mode, no bindings, an unlabelled pane. Running sshtac again
         # (which attaches) must repair it.
         tmux("set-option", "-g", "mouse", "off")
-        tmux("unbind-key", "-T", "root", "F6")
+        tmux("unbind-key", "-T", "root", "F7")
         tmux("set-option", "-p", "-u", "-t", self.exec_, "@sshtac_role")
         launch([], self.cfg, attach=False)
         self.assertEqual(tmux("show-options", "-gv", "mouse").strip(), "on")
-        self.assertIn("send", tmux("list-keys", "-T", "root", "F6"))
+        self.assertIn("send", tmux("list-keys", "-T", "root", "F7"))
         self.assertEqual(tmux("show-options", "-pqv", "-t", self.exec_, "@sshtac_role").strip(), "EXECUTE")
 
     def test_1f_reattach_shows_reconnect_banner(self):
@@ -205,15 +205,15 @@ class TestEndToEnd(unittest.TestCase):
         import copy
 
         data = copy.deepcopy(self.cfg.raw)
-        data["keys"]["send_results"] = "M-F6"
+        data["keys"]["send_results"] = "M-F7"
         launch([], config.from_dict(data), attach=False)
         self.assertIn("unknown key", subprocess.run(
-            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "F6"], capture_output=True, text=True).stderr)
-        self.assertIn("send", tmux("list-keys", "-T", "root", "M-F6"))
+            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "F7"], capture_output=True, text=True).stderr)
+        self.assertIn("send", tmux("list-keys", "-T", "root", "M-F7"))
         launch([], self.cfg, attach=False)  # back to the defaults for later tests
-        self.assertIn("send", tmux("list-keys", "-T", "root", "F6"))
+        self.assertIn("send", tmux("list-keys", "-T", "root", "F7"))
         self.assertIn("unknown key", subprocess.run(
-            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "M-F6"], capture_output=True, text=True).stderr)
+            ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "M-F7"], capture_output=True, text=True).stderr)
 
     def test_1g_reattach_with_new_keys_updates_pane_text(self):
         # Edit the config, run sshtac again (a reattach): the running panes
@@ -221,22 +221,22 @@ class TestEndToEnd(unittest.TestCase):
         import copy
 
         data = copy.deepcopy(self.cfg.raw)
-        data["keys"].update(approve="F11", reject="F12", edit="F3", send_results="F7")
+        data["keys"].update(approve="F11", reject="F10", edit="F2", send_results="F6")
         try:
             launch([], config.from_dict(data), attach=False)
             self.propose("echo relabel-ok")
             self.assertTrue(wait_for(lambda: "F11 approve" in self.pane(self.exec_)), self.pane(self.exec_))
-            self.assertIn("F12 reject", self.pane(self.exec_))
-            self.assertIn("F3 edit", self.pane(self.exec_))
-            self.assertTrue(wait_for(lambda: "F11 approve, F12 reject, F3 edit" in self.chat_text()))
+            self.assertIn("F10 reject", self.pane(self.exec_))
+            self.assertIn("F2 edit", self.pane(self.exec_))
+            self.assertTrue(wait_for(lambda: "F11 approve, F10 reject, F2 edit" in self.chat_text()))
             tmux("send-keys", "-t", self.chat, "-l", "/help")
             tmux("send-keys", "-t", self.chat, "Enter")
-            self.assertTrue(wait_for(lambda: "F7 = send new shell output" in self.chat_text()))
+            self.assertTrue(wait_for(lambda: "F6 = send new shell output" in self.chat_text()))
         finally:
             sshtac("reject", "--session", SESSION)
             launch([], self.cfg, attach=False)  # back to the defaults for later tests
         self.propose("echo relabel-back")
-        self.assertTrue(wait_for(lambda: "F7 approve" in self.pane(self.exec_)), self.pane(self.exec_))
+        self.assertTrue(wait_for(lambda: "F8 approve" in self.pane(self.exec_)), self.pane(self.exec_))
         sshtac("reject", "--session", SESSION)
 
     def test_1d_failed_creation_leaves_nothing_to_attach_to(self):
@@ -359,7 +359,7 @@ class TestEndToEnd(unittest.TestCase):
         self.clip.unlink(missing_ok=True)
         self.assertEqual(sshtac("copy", "--output", "--session", SESSION).returncode, 0)
         self.assertTrue(wait_for(lambda: self.clip.exists() and "COPY-OUT-42" in self.clip.read_text()))
-        # Copying doesn't send or move the mark: F6 still sends the same output.
+        # Copying doesn't send or move the mark: sending still sends the same output.
         sshtac("send", "--results", "--session", SESSION)
         self.assertTrue(wait_for(lambda: "COPY-OUT-42" in self.chat_text().rsplit("FAKE MODEL received:", 1)[-1]))
 

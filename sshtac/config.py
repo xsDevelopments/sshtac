@@ -48,11 +48,13 @@ DEFAULTS: dict[str, Any] = {
     },
     "capture": {"max_chars": 20_000},
     "keys": {
-        "send_selection": "F5",  # copy mode
-        "send_results": "F6",
-        "approve": "F7",
-        "reject": "F8",
-        "edit": "F9",
+        # Clear of sshTIK's F1 F2 F4 F5 F6, and of F1/F10/F11 in GNOME Terminal
+        # and xfce4-terminal (help, menu, full screen).
+        "send_selection": "F9",  # copy mode
+        "send_results": "F7",
+        "approve": "F8",
+        "reject": "F12",
+        "edit": "F3",
         "focus_toggle": "BTab",  # Shift+Tab: jump between the shell and the chat
         "copy_reply": "S-F4",  # copy the AI's last reply to the clipboard
         "copy_output": "S-F5",  # copy shell output since your last command (not sent)

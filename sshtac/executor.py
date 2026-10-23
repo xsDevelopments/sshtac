@@ -3,7 +3,7 @@
 What can be approved:
 
 * BLOCKED (local policy), rejected characters (ESC, CR, NUL, bidi, zero-width,
-  ...) and multi-line commands can only be edited (F9) or rejected (F8).
+  ...) and multi-line commands can only be edited or rejected.
   Multi-line stays blocked: in a shell without bracketed paste each newline
   would run on paste, before any further approval.
 * DESTRUCTIVE (the stricter of the local verdict and the model's label) needs

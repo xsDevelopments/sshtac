@@ -57,11 +57,13 @@ max_chars = 20000
 # A plain letter isn't allowed: it would be captured while you type.
 # If a function key does nothing in your terminal, see the README section
 # "When a function key doesn't work".
-send_selection = "F5"   # in a mouse/copy-mode selection: send it to the AI
-send_results = "F6"     # send new shell output since the last command
-approve = "F7"
-reject = "F8"
-edit = "F9"
+# The defaults stay clear of sshTIK (F1 F2 F4 F5 F6) and of GNOME Terminal and
+# xfce4-terminal (F1 help, F10 menu, F11 full screen).
+send_selection = "F9"   # in a mouse/copy-mode selection: send it to the AI
+send_results = "F7"     # send new shell output since the last command
+approve = "F8"
+reject = "F12"
+edit = "F3"
 focus_toggle = "BTab"   # Shift+Tab: jump between the shell and the AI chat
 copy_reply = "S-F4"     # copy the AI's last reply to the clipboard
 copy_output = "S-F5"    # copy shell output since your last command (not sent to the AI)

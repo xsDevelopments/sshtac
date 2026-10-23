@@ -159,7 +159,7 @@ class Core:
             threading.Event().wait()  # nothing to read; serve IPC until killed
         # A multi-line paste reaches us as several Enter-terminated lines in
         # quick succession. Those are collected into one message, which is sent
-        # on your next Enter (so you can add to it) or with F5/F6.
+        # on your next Enter (so you can add to it) or with a send key.
         pending: list[str] = []
 
         def set_pending(lines: list[str]) -> None:
@@ -186,7 +186,7 @@ class Core:
             with self._lock:
                 slot, self._draft_slot = self._draft_slot, None
             if slot is not None:
-                # Submitted for a send (F5/F6), not a chat message.
+                # Submitted for a send (send key), not a chat message.
                 slot["text"] = "\n".join([*pending, line]).strip()
                 set_pending([])
                 slot["done"].set()
@@ -455,7 +455,7 @@ class Core:
 
     def _take_draft(self) -> dict[str, Any] | None:
         """If something is typed at `you>` (not a /command), press Enter in the
-        chat pane so the input loop hands that line to this send (F5/F6)
+        chat pane so the input loop hands that line to this send (send key)
         instead of sending it as a chat message. Submitting the line works the
         same in GNU readline, vi mode and macOS's libedit, and leaves it on
         screen. Returns the slot the input loop fills, or None."""

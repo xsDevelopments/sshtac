@@ -59,7 +59,7 @@ class TestTmuxVersion(unittest.TestCase):
 class TestConfig(unittest.TestCase):
     def test_defaults_valid(self):
         cfg = config.from_dict(config.DEFAULTS)
-        self.assertEqual(cfg.keys["send_results"], "F6")
+        self.assertEqual(cfg.keys["send_results"], "F7")
         self.assertEqual(cfg.model, "claude-sonnet-5-5")
 
     def test_unknown_key_rejected(self):
@@ -264,7 +264,7 @@ class TestConfigFile(unittest.TestCase):
     def test_key_names(self):
         import copy
 
-        for good in ("F7", "F12", "S-F7", "M-F7", "C-a", "M-a", "C-M-x", "M-Up"):
+        for good in ("F10", "F11", "S-F7", "M-F7", "C-a", "M-a", "C-M-x", "M-Up"):
             data = copy.deepcopy(config.DEFAULTS)
             data["keys"]["approve"] = good
             config.from_dict(data)
@@ -312,10 +312,17 @@ class TestConfigFile(unittest.TestCase):
                 return self.out
 
         live = cfg.live_key_labels(T(json.dumps({"approve": "F11", "edit": "Shift+F3"})))
-        self.assertEqual((live["approve"], live["edit"], live["reject"]), ("F11", "Shift+F3", "F8"))
+        self.assertEqual((live["approve"], live["edit"], live["reject"]), ("F11", "Shift+F3", "F12"))
         for bad in ("", "not json", "[1, 2]", json.dumps({"approve": "\x1b[2J"}),
                     json.dumps({"approve": 7, "bogus": "F1"}), RuntimeError("tmux gone")):
             self.assertEqual(cfg.live_key_labels(T(bad)), cfg.key_labels, repr(bad))
+
+    def test_default_keys_avoid_sshtik_and_terminals(self):
+        import copy
+
+        keys = set(config.from_dict(copy.deepcopy(config.DEFAULTS)).keys.values())
+        # sshTIK: F1 F2 F4 F5 F6; GNOME Terminal / xfce4-terminal: F1 F10 F11.
+        self.assertFalse(keys & {"F1", "F2", "F4", "F5", "F6", "F10", "F11"}, keys)
 
     def test_duplicate_keys_rejected(self):
         import copy

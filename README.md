@@ -45,13 +45,13 @@ come back). The bottom line of the screen always shows the keys.
 | Do this | How |
 |---|---|
 | Ask the AI something | Click the chat pane (or **Shift+Tab**) and type at `you>` |
-| Send new shell output | **F6**: everything since your last approved command |
-| Send a specific bit | Drag over it with the mouse, then **F5** |
+| Send new shell output | **F7**: everything since your last approved command |
+| Send a specific bit | Drag over it with the mouse, then **F9** |
 | Paste several lines into the chat | Just paste: they're held as one message (`...>` prompt) until you press Enter, so you can add a question first |
-| Send output *with* a comment or question | Type it at `you>` without pressing Enter, then **F6** (or **F5**): it goes along with the output |
-| Run the proposed command | **F7** (destructive ones ask you to type `yes`) |
-| Reject it | **F8** |
-| Change it first | **F9** opens it in `$EDITOR` |
+| Send output *with* a comment or question | Type it at `you>` without pressing Enter, then **F7** (or **F9**): it goes along with the output |
+| Run the proposed command | **F8** (destructive ones ask you to type `yes`) |
+| Reject it | **F12** |
+| Change it first | **F3** opens it in `$EDITOR` |
 | Jump between shell and chat | **Shift+Tab** |
 | Copy to your clipboard | Drag over text (copies on release); **Shift+F4** copies the AI's last reply; **Shift+F5** copies the shell output since your last command (without sending it) |
 | Scroll a pane | Mouse wheel; **q** goes back to live |
@@ -59,7 +59,7 @@ come back). The bottom line of the screen always shows the keys.
 | End everything | `/quit` in the chat (asks to confirm), or `sshtac stop` from another terminal |
 
 Chat commands: `/help`, `/status`, `/sent` (exactly what was last sent to the AI), `/mark`
-(start the next F6 capture from here), `/detach`, `/quit`.
+(start the next F7 capture from here), `/detach`, `/quit`.
 
 ## How a command gets approved
 
@@ -68,9 +68,9 @@ command itself and ignores the AI's claims. **The stricter one wins.**
 
 | Risk | Examples | To run it |
 |---|---|---|
-| read-only | `ls`, `grep`, `ss`, `iptables -L`, `journalctl -u x`, `SELECT …` | F7 |
-| mutating | anything not known to be read-only: `cp`, `systemctl restart`, `apt install` | F7 |
-| destructive | `rm`, `kill`, stopping services, firewall/account changes, `>` overwrites, SQL `DROP/DELETE`, package removal, anything changing `/dev` | F7, then type `yes` |
+| read-only | `ls`, `grep`, `ss`, `iptables -L`, `journalctl -u x`, `SELECT …` | F8 |
+| mutating | anything not known to be read-only: `cp`, `systemctl restart`, `apt install` | F8 |
+| destructive | `rm`, `kill`, stopping services, firewall/account changes, `>` overwrites, SQL `DROP/DELETE`, package removal, anything changing `/dev` | F8, then type `yes` |
 | blocked | `curl … \| sh`, `eval $(…)`, `rm -rf /`, `mkfs`, `dd of=/dev/sda`, `chmod -R 777 /`, `history -c`, `unset HISTFILE`, stopping auditd/rsyslog/journald, fork bombs | can only be edited or rejected |
 
 The check sees through quoting and escaping tricks (`'r''m'`, `r\m`, `${IFS}`, `$'\x72m'`), line
@@ -90,12 +90,12 @@ prefix a space so it stays out of shell history (works if the remote has `HISTCO
 Values stay in memory and are redacted from everything sent to the AI afterwards.
 
 Approved commands are pasted with tmux's bracketed paste, and Enter is sent separately. The
-command line becomes the start of the next F6 capture.
+command line becomes the start of the next F7 capture.
 
 ## What gets sent to the AI
 
-Only what you send with F5/F6, plus what you type in the chat (including a half-typed line, which
-F5/F6 send along; lines starting with `/` are left alone). Before anything leaves your machine:
+Only what you send with F7/F9, plus what you type in the chat (including a half-typed line, which
+F7/F9 send along; lines starting with `/` are left alone). Before anything leaves your machine:
 
 1. Terminal escape codes and control characters are removed; invisible Unicode is made visible.
 2. Placeholder values you entered this session are replaced with `[REDACTED:session_secret]`.
@@ -208,11 +208,11 @@ Environment overrides: `SSHTAC_CONFIG` (config path), `SSHTAC_MODEL`, `SSHTAC_TM
 
 ```toml
 [keys]
-send_selection = "F5"
-send_results = "F6"
-approve = "F7"
-reject = "F8"
-edit = "F9"
+send_selection = "F9"
+send_results = "F7"
+approve = "F8"
+reject = "F12"
+edit = "F3"
 focus_toggle = "BTab"     # Shift+Tab (tmux calls it BTab; "S-Tab" is accepted too)
 copy_reply = "S-F4"
 copy_output = "S-F5"
@@ -236,7 +236,8 @@ tmux -L sshtac list-keys -T root
 
 Some terminals keep F-keys for themselves or send something tmux doesn't recognise. Common cases:
 
-- **GNOME Terminal**: F10 opens the menu and F11 toggles full screen (sshtac's defaults avoid both).
+- **GNOME Terminal / xfce4-terminal**: F1 opens help, F10 the menu, F11 full screen (sshtac's
+  defaults avoid all three, and sshTIK's F1, F2, F4, F5 and F6).
 - **macOS**: F-keys control brightness and volume. Hold **fn**, or turn on *Use F1, F2, etc. keys as
   standard function keys* in System Settings → Keyboard.
 - **VS Code / IDE terminals** often capture F-keys for debugging.
@@ -245,7 +246,7 @@ Some terminals keep F-keys for themselves or send something tmux doesn't recogni
 - **sshtac inside another tmux or screen**: the outer one may catch the key first.
 
 To check what your terminal sends, press **Ctrl+V** and then the key in an ordinary shell.
-`^[[18~` means F7 arrives fine. If nothing appears, or your terminal does something else, use
+`^[[19~` means F8 arrives fine. If nothing appears, or your terminal does something else, use
 Alt-based keys instead:
 
 ```toml
@@ -262,7 +263,7 @@ Mac users: in Terminal.app enable *Use Option as Meta key*; in iTerm2 set Option
 
 ### Copying and pasting
 
-Dragging selects text inside one pane, keeps it highlighted (so F5 can send it), and copies it to
+Dragging selects text inside one pane, keeps it highlighted (so F9 can send it), and copies it to
 your clipboard when you release the button. **Shift+F4** copies the AI's last reply (with its
 proposed command, if any); **Shift+F5** copies the shell output since your last command, without
 sending it to the AI. The chat pane confirms each copy. Paste with your terminal's usual keys
@@ -303,10 +304,10 @@ connection. For a fresh start, `/quit` it first.
 
 ## Limitations
 
-- sshtac reads the terminal only when you press F5/F6; it never watches it.
-- F6 tracks output with a line marker. If history reaches `history_limit` (50,000 lines), the
+- sshtac reads the terminal only when you press F7/F9; it never watches it.
+- F7 tracks output with a line marker. If history reaches `history_limit` (50,000 lines), the
   oldest lines since the marker may be missing; sshtac says so when it happens. While a full-screen
-  program (vim, less, top) is open, F6 captures only that screen.
+  program (vim, less, top) is open, F7 captures only that screen.
 - The local check is conservative and pattern-based: it errs towards stricter. When it's wrong in
   the strict direction, approve with `yes` or edit the command. It does not make a malicious
   command safe; you still read what you approve.
@@ -333,7 +334,7 @@ test plan, run against a throwaway SSH container, is in [TESTING.md](TESTING.md)
 | `llm.py` | system prompt, `propose_command` tool, history rules |
 | `pipeline.py` | strip → redact → truncate → wrap for everything sent |
 | `policy.py` | local risk classifier |
-| `charsafe.py`, `placeholders.py`, `marks.py` | character checks, safe substitution, F6 range maths |
+| `charsafe.py`, `placeholders.py`, `marks.py` | character checks, safe substitution, output-range maths |
 | `ipc.py`, `runtime.py`, `tmuxctl.py`, `audit.py`, `config.py` | plumbing |
 
 ## License
