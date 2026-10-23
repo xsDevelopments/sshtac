@@ -11,13 +11,14 @@ the terminal as potentially hostile.
 Needs **Linux or macOS**, **Python 3.11+**, **tmux 3.2+** and an Anthropic API key.
 
 ```bash
-pipx install sshtac                                   # once (install tmux first: apt install tmux / brew install tmux)
+pipx install git+https://github.com/xsDevelopments/sshtac.git   # once (needs git and tmux: apt install git tmux / brew install tmux)
 sshtac config --set-key                               # once: save your Anthropic API key
 sshtac user@your-server                               # or just `sshtac` for a local shell
 ```
 
-Upgrade with `pipx upgrade sshtac`. No pipx? `sudo apt install pipx` or `brew install pipx`, then
-`pipx ensurepath`.
+Upgrade with `pipx upgrade sshtac` (it picks up each new release). No pipx? `sudo apt install pipx`
+or `brew install pipx`, then `pipx ensurepath`. Without git, install a release's wheel instead:
+`pipx install https://github.com/xsDevelopments/sshtac/releases/download/v0.1.0/sshtac-0.1.0-py3-none-any.whl`.
 
 From source (for development):
 

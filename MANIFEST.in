@@ -1,2 +1,2 @@
 include TESTING.md
-recursive-include tests *.py *.log
+recursive-include tests *.py *.log *.jsonl
