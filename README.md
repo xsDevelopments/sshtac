@@ -223,7 +223,8 @@ Use tmux key names: function keys `F1`–`F24`, optionally with modifiers (`S-F7
 `C-a` (Ctrl+a). Plain letters and plain Tab aren't allowed, because the key would be captured while
 you type (Tab would stop tab completion in the shell). Shift+Tab is free in bash, but zsh uses it
 for reverse completion; set `focus_toggle = "F4"` (or another key) if you need it. Two actions can't
-share a key. After restarting sshtac, the old keys are unbound automatically.
+share a key. Key changes apply when you run `sshtac` again, even into a running session: the old
+keys are unbound and the panes show the new ones. Other settings need a restart (`/quit`, then `sshtac`).
 
 To see what sshtac has bound:
 

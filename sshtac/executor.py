@@ -102,7 +102,7 @@ class Executor:
         self.clear()
         cmd = p["command"]
         a = assess(cmd, p.get("risk", ""), self.classifier)
-        k = self.cfg.key_labels
+        k = self.cfg.live_key_labels(self.tmux)
         title = f"EXECUTE — proposal {p['id'][-8:]}" + (" (edited by you)" if self.edited else "")
         self.say(title, "bold")
         if p.get("injection_suspected"):

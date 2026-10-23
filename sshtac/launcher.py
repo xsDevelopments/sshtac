@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from sshtac import clipboard, runtime
-from sshtac.config import Config, key_label
+from sshtac.config import LABELS_OPTION, Config, key_label
 from sshtac.tmuxctl import MIN_VERSION, Tmux, TmuxError
 
 # Credentials the core needs. tmux copies these from the launching client's
@@ -208,6 +208,8 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
     )
     bound.append(f"root:{k['focus_toggle']}")
     tmux.run("set-option", "-g", "@sshtac_bound_keys", " ".join(bound))
+    # The running panes read this when they draw, so they show these keys.
+    tmux.run("set-option", "-g", LABELS_OPTION, json.dumps(cfg.key_labels))
 
 
 def _check_tmux(tmux: Tmux) -> None:

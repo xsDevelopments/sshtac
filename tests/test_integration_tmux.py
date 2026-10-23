@@ -215,6 +215,30 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("unknown key", subprocess.run(
             ["tmux", "-L", SOCKET, "list-keys", "-T", "root", "M-F6"], capture_output=True, text=True).stderr)
 
+    def test_1g_reattach_with_new_keys_updates_pane_text(self):
+        # Edit the config, run sshtac again (a reattach): the running panes
+        # must show the keys that are now bound, not the ones they started with.
+        import copy
+
+        data = copy.deepcopy(self.cfg.raw)
+        data["keys"].update(approve="F11", reject="F12", edit="F3", send_results="F7")
+        try:
+            launch([], config.from_dict(data), attach=False)
+            self.propose("echo relabel-ok")
+            self.assertTrue(wait_for(lambda: "F11 approve" in self.pane(self.exec_)), self.pane(self.exec_))
+            self.assertIn("F12 reject", self.pane(self.exec_))
+            self.assertIn("F3 edit", self.pane(self.exec_))
+            self.assertTrue(wait_for(lambda: "F11 approve, F12 reject, F3 edit" in self.chat_text()))
+            tmux("send-keys", "-t", self.chat, "-l", "/help")
+            tmux("send-keys", "-t", self.chat, "Enter")
+            self.assertTrue(wait_for(lambda: "F7 = send new shell output" in self.chat_text()))
+        finally:
+            sshtac("reject", "--session", SESSION)
+            launch([], self.cfg, attach=False)  # back to the defaults for later tests
+        self.propose("echo relabel-back")
+        self.assertTrue(wait_for(lambda: "F7 approve" in self.pane(self.exec_)), self.pane(self.exec_))
+        sshtac("reject", "--session", SESSION)
+
     def test_1d_failed_creation_leaves_nothing_to_attach_to(self):
         from unittest import mock
 

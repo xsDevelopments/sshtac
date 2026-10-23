@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import json
 import os
 import re
 import tomllib
@@ -82,6 +83,7 @@ _KEY_RE = re.compile(rf"(?:BTab|(?:[CMS]-)*{_FKEY}|(?:[CMS]-)+(?:{_FKEY}|[A-Za-z
 # tmux sees Shift+Tab as BTab; a binding written as S-Tab never fires.
 _KEY_ALIASES = {"S-Tab": "BTab"}
 KEY_LABELS = {"BTab": "Shift+Tab"}
+LABELS_OPTION = "@sshtac_key_labels"  # tmux server option: the labels of the keys bound now
 
 
 def key_label(key: str) -> str:
@@ -136,6 +138,22 @@ class Config:
     @property
     def key_labels(self) -> dict[str, str]:
         return {name: key_label(key) for name, key in self.keys.items()}
+
+    def live_key_labels(self, tmux: Any) -> dict[str, str]:
+        """Key names as bound right now. Running sshtac again after editing the
+        config rebinds the keys without restarting the panes, so ask tmux
+        (the launcher records them there) and fall back to our own config."""
+        labels = self.key_labels
+        try:
+            raw = tmux.run("show-options", "-gqv", LABELS_OPTION, check=False).strip()
+            live = json.loads(raw) if raw else {}
+        except Exception:  # tmux gone or garbage in the option: keep ours
+            return labels
+        if isinstance(live, dict):
+            # Shown in the panes as-is, so accept key names only.
+            labels.update({k: v for k, v in live.items()
+                           if k in labels and isinstance(v, str) and re.fullmatch(r"[A-Za-z0-9+-]{1,32}", v)})
+        return labels
 
     @property
     def ai(self) -> dict[str, Any]:

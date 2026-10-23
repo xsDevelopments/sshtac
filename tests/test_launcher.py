@@ -296,6 +296,27 @@ class TestConfigFile(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.from_dict(data)
 
+    def test_live_key_labels(self):
+        import copy
+        import json
+
+        cfg = config.from_dict(copy.deepcopy(config.DEFAULTS))
+
+        class T:
+            def __init__(self, out):
+                self.out = out
+
+            def run(self, *a, **kw):
+                if isinstance(self.out, Exception):
+                    raise self.out
+                return self.out
+
+        live = cfg.live_key_labels(T(json.dumps({"approve": "F11", "edit": "Shift+F3"})))
+        self.assertEqual((live["approve"], live["edit"], live["reject"]), ("F11", "Shift+F3", "F8"))
+        for bad in ("", "not json", "[1, 2]", json.dumps({"approve": "\x1b[2J"}),
+                    json.dumps({"approve": 7, "bogus": "F1"}), RuntimeError("tmux gone")):
+            self.assertEqual(cfg.live_key_labels(T(bad)), cfg.key_labels, repr(bad))
+
     def test_duplicate_keys_rejected(self):
         import copy
 
