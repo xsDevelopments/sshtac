@@ -85,8 +85,9 @@ look-alikes can't hide. If the AI thinks the terminal output tried to instruct i
 shows a red **INJECTION SUSPECTED** banner.
 
 **Secrets.** The AI never sees passwords. It writes `{{PLACEHOLDERS}}`. When you approve, the
-execute pane asks for each value with a hidden prompt, inserts it safely quoted, and offers to
-prefix a space so it stays out of shell history (works if the remote has `HISTCONTROL=ignorespace`).
+execute pane asks for each value with a masked prompt (a `*` per character), inserts it safely
+quoted, and offers to prefix a space so it stays out of shell history (works if the remote has
+`HISTCONTROL=ignorespace`).
 Values stay in memory and are redacted from everything sent to the AI afterwards.
 
 Approved commands are pasted with tmux's bracketed paste, and Enter is sent separately. The

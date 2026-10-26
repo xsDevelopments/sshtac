@@ -8,6 +8,9 @@ untrusted text.
 
 from __future__ import annotations
 
+import codecs
+import getpass
+import os
 import select
 import sys
 import termios
@@ -33,6 +36,77 @@ def style(text: str, name: str | None, enabled: bool = True) -> str:
     if not name or not enabled:
         return text
     return f"\x1b[{_COLOURS[name]}m{text}\x1b[0m"
+
+
+def read_secret(prompt: str, fd: int | None = None, out=None) -> str:
+    """Read one line without showing it, printing `*` per character so you
+    can see your typing arrive. Backspace and Ctrl+U edit; Enter ends it;
+    Ctrl+C raises KeyboardInterrupt, Ctrl+D on an empty line EOFError, as
+    with input(). Arrow and function keys are ignored. Not a terminal: getpass."""
+    out = out or sys.stdout
+    if fd is None:
+        try:
+            fd = sys.stdin.fileno()
+        except (OSError, ValueError):
+            return getpass.getpass(prompt)
+    try:
+        old = termios.tcgetattr(fd)
+    except termios.error:
+        return getpass.getpass(prompt)
+    new = list(old)
+    new[3] &= ~(termios.ECHO | termios.ICANON)  # ISIG stays: Ctrl+C still interrupts
+    new[6] = list(old[6])
+    new[6][termios.VMIN], new[6][termios.VTIME] = 1, 0
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    chars: list[str] = []
+    out.write(prompt)
+    out.flush()
+    termios.tcsetattr(fd, termios.TCSANOW, new)
+    try:
+        while True:
+            b = os.read(fd, 1)
+            if not b:
+                raise EOFError
+            if b in (b"\r", b"\n"):
+                break
+            if b in (b"\x7f", b"\x08"):  # Backspace
+                if chars:
+                    chars.pop()
+                    out.write("\b \b")
+            elif b == b"\x15":  # Ctrl+U
+                out.write("\b \b" * len(chars))
+                chars.clear()
+            elif b == b"\x04":  # Ctrl+D
+                if not chars:
+                    raise EOFError
+            elif b == b"\x1b":
+                _skip_escape(fd)
+            elif b[0] < 0x20:
+                pass  # other control keys
+            else:
+                for ch in decoder.decode(b):
+                    chars.append(ch)
+                    out.write("*")
+            out.flush()
+        return "".join(chars)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        out.write("\n")
+        out.flush()
+        chars.clear()
+
+
+def _skip_escape(fd: int) -> None:
+    """Swallow the rest of an escape sequence (an arrow or function key)."""
+    if not select.select([fd], [], [], 0.05)[0]:
+        return  # a lone Escape
+    b = os.read(fd, 1)
+    if b not in (b"[", b"O"):
+        return
+    while select.select([fd], [], [], 0.05)[0]:
+        b = os.read(fd, 1)
+        if not b or 0x40 <= b[0] <= 0x7E:
+            return
 
 
 class ChatUI:

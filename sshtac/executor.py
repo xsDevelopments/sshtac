@@ -8,8 +8,9 @@ What can be approved:
   would run on paste, before any further approval.
 * DESTRUCTIVE (the stricter of the local verdict and the model's label) needs
   `yes` typed in this pane.
-* Placeholders are filled in here with getpass, substituted in memory, and the
-  values are added to the core's session-secret redaction set before pasting.
+* Placeholders are filled in here with masked input (ui.read_secret),
+  substituted in memory, and the values are added to the core's
+  session-secret redaction set before pasting.
 
 Approval pastes via tmux load-buffer from stdin + paste-buffer -p -d, sets the
 results mark on the command line, then sends Enter as a separate key.
@@ -17,14 +18,15 @@ results mark on the command line, then sends Enter as a separate key.
 
 from __future__ import annotations
 
-import getpass
 import os
+import queue
 import secrets
 import shlex
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -34,7 +36,7 @@ from sshtac.config import Config
 from sshtac.pipeline import strip
 from sshtac.policy import Risk
 from sshtac.tmuxctl import Tmux, TmuxError
-from sshtac.ui import style
+from sshtac.ui import read_secret, style
 
 CONNECT_TIMEOUT = 15.0
 RISK_COLOUR = {
@@ -81,6 +83,8 @@ class Executor:
         self.original_command = ""
         self.edited = False
         self.token = ""
+        self.prompting = False  # waiting for typed input (a reject interrupts it)
+        self.interrupted = False  # ...and this says it was the reject, not Ctrl+C
         pol = cfg.raw["policy"]
         self.classifier = policy.Classifier(pol["blocked_patterns"], pol["destructive_patterns"])
 
@@ -187,18 +191,33 @@ class Executor:
                 pass
 
     def ask(self, prompt: str) -> str:
+        self.prompting = True
         try:
             return input(style(prompt, "boldyellow", self.colour))
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print()
-            raise Cancelled() from None
+            raise Cancelled("end of input (Ctrl+D)") from None
+        except KeyboardInterrupt:
+            print()
+            raise Cancelled(self._interrupt_reason()) from None
+        finally:
+            self.prompting = False
+
+    def _interrupt_reason(self) -> str:
+        reason = "rejected" if self.interrupted else "Ctrl+C"
+        self.interrupted = False
+        return reason
 
     def secret(self, prompt: str) -> str:
+        self.prompting = True
         try:
-            return getpass.getpass(prompt)
-        except (EOFError, KeyboardInterrupt):
-            print()
-            raise Cancelled() from None
+            return read_secret(prompt)
+        except EOFError:
+            raise Cancelled("end of input (Ctrl+D)") from None
+        except KeyboardInterrupt:
+            raise Cancelled(self._interrupt_reason()) from None
+        finally:
+            self.prompting = False
 
     # ---------------------------------------------------------------- actions
 
@@ -308,7 +327,10 @@ class Executor:
                     raise Cancelled("not confirmed")
             if names:
                 descs = {ph["name"]: ph["description"] for ph in self._placeholders(p)}
-                self.say("Values are used once, kept in memory only and never shown or logged.", "dim")
+                k = self.cfg.live_key_labels(self.tmux)
+                self.say("Type each value and press Enter (it shows as ***). Values are used once, "
+                         "kept in memory only and never shown or logged.", "dim")
+                self.say(f"Cancel: Ctrl+C here, or {k['reject']} to reject the command.", "dim")
                 for name in names:
                     values[name] = self.secret(f"{name} ({strip(descs.get(name, ''))}): ")
                 try:
@@ -326,7 +348,7 @@ class Executor:
             if charsafe.check(final).rejected or charsafe.check(final).multiline:
                 raise Cancelled("the final command failed the character check")
             self._paste(shell, final)
-        except Cancelled as e:
+        except (Cancelled, KeyboardInterrupt) as e:
             self.render(p)
             self.say(f"approval cancelled{': ' + str(e) if str(e) else ''}", "yellow")
             self.focus_shell()
@@ -385,8 +407,25 @@ class Executor:
         self.token = sub.hello_reply.get("token", "")
         self.idle()
         handlers = {"approve": self.on_approve, "reject": self.on_reject, "edit": self.on_edit}
+        # Events are read on their own thread so a reject can interrupt a
+        # prompt: while one is open the main thread is blocked reading keys.
+        # The reject is still queued, so it then rejects the command.
+        events: queue.Queue = queue.Queue()
+
+        def reader() -> None:
+            try:
+                for ev in sub.events():
+                    if ev.get("event") == "reject" and self.prompting:
+                        self.interrupted = True
+                        os.kill(os.getpid(), signal.SIGINT)
+                    events.put(ev)
+            except (OSError, ValueError):
+                pass
+            events.put(None)
+
+        threading.Thread(target=reader, daemon=True).start()
         try:
-            for ev in sub.events():
+            while (ev := events.get()) is not None:
                 kind = ev.get("event")
                 if kind == "proposal":
                     self.on_proposal(ev.get("proposal"))

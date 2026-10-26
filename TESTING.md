@@ -199,7 +199,8 @@ becomes blocked). `ls $XDG_RUNTIME_DIR/sshtac/sshtac/` shows no leftover `edit-*
 
 **T20 Placeholders and secrets.** Ask: *"Give me a command that prints the sha256 of a secret I'll
 type, using a placeholder."* (or [fake] `FAKE_PROPOSE printf '%s' {{TOKEN}} | sha256sum`). Press F8.
-Expect: focus moves to EXECUTE and asks `TOKEN (…):` without echoing. Then "Prefix a space…?":
+Expect: focus moves to EXECUTE and asks `TOKEN (…):`; typing shows one `*` per character, never the
+text, and Backspace removes one. Then "Prefix a space…?":
 answer `y`. The shell runs ` printf … | sha256sum` with a leading space. Press F7 and check `/sent`:
 the secret appears only as `[REDACTED:session_secret]`.
 `grep -c '<your secret>' ~/.local/state/sshtac/audit-*.jsonl` prints 0; the `approved` record lists

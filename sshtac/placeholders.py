@@ -1,6 +1,6 @@
 """{{PLACEHOLDER}} handling: find them, and substitute values safely.
 
-Values are typed by the human (getpass), held in memory only, and inserted so
+Values are typed by the human (masked input), held in memory only, and inserted so
 the shell sees them as one literal word whatever they contain:
 
 * outside quotes:        {{X}}       ->  'value'
@@ -9,7 +9,7 @@ the shell sees them as one literal word whatever they contain:
 
 shlex.quote produces the single-quoted form, which nothing inside can escape
 from: no expansion, no history expansion (!), no word splitting. A value can't
-contain newlines or control characters (getpass reads one line, and the final
+contain newlines or control characters (the prompt reads one line, and the final
 command is re-checked by charsafe anyway).
 """
 

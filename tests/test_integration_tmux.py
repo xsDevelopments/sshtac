@@ -455,7 +455,8 @@ class TestEndToEnd(unittest.TestCase):
         tmux("send-keys", "-t", self.exec_, "-l", secret)
         tmux("send-keys", "-t", self.exec_, "Enter")
         self.assertTrue(wait_for(lambda: "Prefix a space" in self.pane(self.exec_)))
-        self.assertNotIn(secret, self.pane(self.exec_))  # getpass: no echo
+        self.assertNotIn(secret, self.pane(self.exec_))  # masked: only stars
+        self.assertIn("*" * len(secret), self.pane(self.exec_))
         tmux("send-keys", "-t", self.exec_, "-l", "n")
         tmux("send-keys", "-t", self.exec_, "Enter")
         digest = hashlib.sha256(secret.encode()).hexdigest()
@@ -465,6 +466,19 @@ class TestEndToEnd(unittest.TestCase):
         sshtac("send", "--results", "--session", SESSION)
         self.assertTrue(wait_for(lambda: "[REDACTED:session_secret]" in self.chat_text()))
         self.assertNotIn(secret, self.chat_text())  # ...but never sent to the model
+
+    def test_8f_reject_interrupts_a_placeholder_prompt(self):
+        self.propose("echo never-{{PORT}}")
+        sshtac("approve", "--session", SESSION)
+        self.assertTrue(wait_for(lambda: "PORT (" in self.pane(self.exec_)))
+        self.assertIn("Cancel: Ctrl+C here", self.pane(self.exec_))
+        tmux("send-keys", "-t", self.exec_, "-l", "22")
+        self.assertTrue(wait_for(lambda: "PORT (scripted secret): **" in self.pane(self.exec_)))
+        sshtac("reject", "--session", SESSION)
+        self.assertTrue(wait_for(lambda: "Rejected. No pending command." in self.pane(self.exec_)),
+                        self.pane(self.exec_))
+        self.assertTrue(wait_for(lambda: "[rejected]" in self.chat_text()), self.chat_text())
+        self.assertNotIn("never-", self.pane(self.shell))
 
     def test_8d_edit_in_editor(self):
         self.propose("echo original-command")
