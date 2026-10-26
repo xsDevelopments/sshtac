@@ -44,6 +44,7 @@ Tip: type a comment without pressing Enter, then {send_results}/{send_selection}
 Mouse: click a pane to focus it; drag to select text, then {send_selection} sends it; wheel scrolls (q leaves)
 Keys:  {send_results} = send new shell output   {approve} = approve   {reject} = reject   {focus_toggle} = shell⇄chat
 Copy:  drag copies a selection   {copy_reply} = copy the AI's last reply   {copy_output} = copy new shell output
+Paste: click where it should go, then your terminal's paste key (e.g. Ctrl+Shift+V)
 Leave: /detach (or Ctrl+B then d) keeps everything running — run sshtac again to come back.
        /quit ends sshtac completely, including the shell and any SSH connection."""
 

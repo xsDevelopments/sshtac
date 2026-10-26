@@ -192,6 +192,11 @@ def install_bindings(tmux: Tmux, cfg: Config) -> None:
         # Releasing a mouse drag copies as usual but keeps the selection
         # highlighted (tmux's default clears it), so it can then be sent.
         tmux.run("bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-pipe-no-clear")
+        # A click without a drag leaves copy mode. Text pasted into a pane in
+        # copy mode is dropped, so clicking where you want to paste (or type)
+        # makes the paste land there. A drag doesn't fire this, so selecting
+        # in scrolled-back history still works.
+        tmux.run("bind-key", "-T", table, "MouseUp1Pane", "send-keys", "-X", "cancel")
     tmux.run(
         "bind-key", "-T", "root", k["send_selection"], "display-message",
         f"Select text first (drag with the mouse), then press {key_label(k['send_selection'])}",

@@ -127,6 +127,13 @@ sends `copy-test`. With `clipboard = "off"` under `[tmux]` (restart sshtac), cop
 
 ### What is sent
 
+**T8c Paste where you click.** Drag over a word in the shell pane and release (the highlight stays).
+Click once in the chat pane and press your terminal's paste key (Ctrl+Shift+V). Then drag over a word
+in the chat pane, click once on the `you>` line and paste again. Scroll the shell back with the
+wheel, drag over a line there, click once in the shell and paste.
+Expect: each paste appears at the prompt of the pane you clicked. The click clears that pane's
+highlight and returns it to the live view; dragging in scrolled-back history still selects there.
+
 **T9 Redaction.** In the shell:
 ```bash
 printf 'password=hunter2\nAKIAIOSFODNN7EXAMPLE\nAuthorization: Bearer abcdef1234567890xyz\npostgres://app:s3cret@db/x\n'

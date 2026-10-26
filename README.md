@@ -266,8 +266,14 @@ Mac users: in Terminal.app enable *Use Option as Meta key*; in iTerm2 set Option
 Dragging selects text inside one pane, keeps it highlighted (so F9 can send it), and copies it to
 your clipboard when you release the button. **Shift+F4** copies the AI's last reply (with its
 proposed command, if any); **Shift+F5** copies the shell output since your last command, without
-sending it to the AI. The chat pane confirms each copy. Paste with your terminal's usual keys
-(e.g. Ctrl+Shift+V), or inside sshtac with **Ctrl+B** then **]**.
+sending it to the AI. The chat pane confirms each copy. There is no copy key to press: the
+selection is already on the clipboard when you let go of the button.
+
+To paste, click in the pane where the text should go (the shell or the chat), then use your
+terminal's usual keys (e.g. Ctrl+Shift+V), or **Ctrl+B** then **]** for tmux's own buffer. The
+click matters: a pane with a highlighted selection, or one you've scrolled back in, is in tmux's
+copy mode, which drops pasted text. A click without dragging leaves copy mode and clears the
+highlight.
 
 How the text reaches your clipboard (`[tmux] clipboard` in the config):
 
