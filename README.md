@@ -18,7 +18,7 @@ sshtac user@your-server                               # or just `sshtac` for a l
 
 Upgrade with `pipx upgrade sshtac` (it picks up each new release). No pipx? `sudo apt install pipx`
 or `brew install pipx`, then `pipx ensurepath`. Without git, install a release's wheel instead:
-`pipx install https://github.com/xsDevelopments/sshtac/releases/download/v0.2.0/sshtac-0.2.0-py3-none-any.whl`.
+`pipx install https://github.com/xsDevelopments/sshtac/releases/download/v0.2.1/sshtac-0.2.1-py3-none-any.whl`.
 
 From source (for development):
 
